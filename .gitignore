@@ -1,8 +1,16 @@
 # Ignore object files
 *.o
 
-# Ignore VSCode project settings
+# Ignore executables (no extension, make-style builds)
+# This ignores all files without an extension
+*[!./]*
+
+# Ignore common output binaries (explicitly)
+main
+a.out
+
+# Ignore VSCode settings
 .vscode/
 
-# Ignore macOS dSYM debug symbol directories
+# Ignore macOS dSYM symbol directories
 *.dSYM/
