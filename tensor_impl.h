@@ -1,5 +1,5 @@
-#ifndef TENSOR_H
-#define TENSOR_H
+#ifndef TENSOR_IMPL_H
+#define TENSOR_IMPL_H
 
 #include <vector>
 #include <iostream>
@@ -14,7 +14,7 @@
 #include <random>
 #include <type_traits>
 #include <iomanip>
-#include "helper_functions.h"
+#include "utils.h"
 
 
 template<typename T, typename S>
@@ -57,32 +57,30 @@ protected:
     }
 
     //Generates random matricies for factor matricies
-    void init_mode_matrix(T**& matrix, int rows, int cols) 
-    {
-        // Allocate memory
+    void init_mode_matrix(T**& matrix, int rows, int cols) {
+        static_assert(std::is_arithmetic<T>::value, "T must be an arithmetic type.");
+    
         matrix = new T*[rows];
-        for (int i = 0; i < rows; ++i)
+        for (int i = 0; i < rows; ++i) {
             matrix[i] = new T[cols];
-
-        // RNG setup
+        }
+    
         std::random_device rd;
         std::mt19937 gen(rd());
-
-        // Fill with random values
+    
         if constexpr (std::is_integral<T>::value) {
-            std::uniform_int_distribution<T> dist(0, 100);
-            for (int i = 0; i < rows; ++i)
-                for (int j = 0; j < cols; ++j)
-                    matrix[i][j] = dist(gen);
-        } else if constexpr (std::is_floating_point<T>::value) {
-            std::uniform_real_distribution<T> dist(0.0, 1.0);
+            std::uniform_int_distribution<T> dist(0, 3);
             for (int i = 0; i < rows; ++i)
                 for (int j = 0; j < cols; ++j)
                     matrix[i][j] = dist(gen);
         } else {
-            static_assert(std::is_arithmetic<T>::value, "T must be an arithmetic type.");
+            std::uniform_real_distribution<T> dist(0.0, 1.0);
+            for (int i = 0; i < rows; ++i)
+                for (int j = 0; j < cols; ++j)
+                    matrix[i][j] = dist(gen);
         }
     }
+    
 
     //Function to delete matrixes
     void delete_matrix(T** matrix, int rows, int cols)
@@ -127,6 +125,17 @@ public:
     std::vector<T**> get_fmats() const 
     {
         return {mode_1_fmat, mode_2_fmat, mode_3_fmat};
+    }
+
+    //Returns rows,cols,depth in a vector
+    std::vector<int> get_dims() const
+    {
+        return {rows,cols,depth}; 
+    }
+
+    int get_rank() const
+    {
+        return rank;
     }
 
     //Destructor

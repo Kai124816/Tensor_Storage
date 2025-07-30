@@ -12,7 +12,7 @@
 #include <initializer_list>
 #include <random>
 #include <type_traits>
-#include "alto.h"
+#include "alto_impl.h"
 
 
 template<typename T, typename S>
@@ -227,7 +227,7 @@ public:
         return {m1_blco_mask, m2_blco_mask, m3_blco_mask};
     }
 
-    std::vector<int> get_block_pointer()
+    std::pair<std::vector<int>, std::vector<int>> get_block_pointer()
     {
         return block_pointer;
     }
@@ -243,7 +243,6 @@ public:
         }
     }
 };
-
 
 
 #endif
