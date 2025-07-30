@@ -1,0 +1,8 @@
+# Ignore object files
+*.o
+
+# Ignore VSCode project settings
+.vscode/
+
+# Ignore macOS dSYM debug symbol directories
+*.dSYM/
