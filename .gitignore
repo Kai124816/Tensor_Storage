@@ -14,3 +14,6 @@ a.out
 
 # Ignore macOS dSYM symbol directories
 *.dSYM/
+
+#Ignore text files
+.txt
