@@ -16,7 +16,7 @@
 #include <iomanip>
 #include <unordered_map>
 #include <omp.h>
-#include "tensor.h"
+#include "tensor_impl.h"
 
 //Alto Entry Struct
 template<typename T, typename S>
@@ -61,54 +61,73 @@ protected:
         }
     }
 
-    //Determine the interval for a subspace along a given mode
-    std::pair<int,int> determine_interval(int mode, int block_index)
+    //Determine the offset for a subspace along a given mode and block index
+    int determine_block_offset(int mode, int block_index)
     {
         int start = 0;
         if(block_index > 0) start = partitions[block_index - 1];
         int end = partitions[block_index];
-        int min = std::max(this->rows,this->cols,this->depth);
-        int max = 0;
+        int min = std::max(std::max(this->rows, this->cols), this->depth);
 
-        for(int i = min; i < max; i++){
+        for(int i = start; i < end; i++){
             int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
             if(idx < min) min = idx;
-            else if(idx > max) max = idx;
         }
 
-        std::pair<int,int> p1;
-        p1.first = min; p1.second = max;
+        return min;
+    }
 
-        return p1;
+    //Determine the limit for a subspace along a given mode and block index
+    int determine_block_limit(int mode, int block_index)
+    {
+        int start = 0;
+        if(block_index > 0) start = partitions[block_index - 1];
+        int end = partitions[block_index];
+        int max = 0;
+
+        for(int i = start; i < end; i++){
+            int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
+            if(idx > max) max = idx;
+        }
+
+        return max;
     }
 
     //Takes index in alto vector and determines the corresponding thread block
     int determine_block(int index)
     {
+        int previous = 0;
         for(int i = 0; i < partitions.size(); i++){
-            if(index < partitions[i]) return i;
+            if(previous < index && index < partitions[i]) return i;
+            previous = partitions[i];
         }
         return -1;
     }
 
-    //Determines if entry is a boundary entry or not and encodes flag bit
+    // Marks entries as boundary if their fiber index appears in multiple blocks
     void set_boundaries(int mode)
     {
-        std::unordered_map<int, int> mode_blocks; //First element is the mode index the second element is the block it belongs to
+        std::unordered_map<int, std::unordered_set<int>> fiber_blocks; // fiber idx → set of blocks
         int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
-        S mask = S(1) << num_bits;
+        S boundary_mask = S(1) << num_bits;
 
-        for(int i = 0; i < alto_tensor.size(); i++){
-            int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
+        for (int i = 0; i < alto_tensor.size(); ++i) {
+            S lin_idx = alto_tensor[i].linear_index;
+            int idx = get_mode_idx(lin_idx, mode);
             int block = determine_block(i);
-            if (mode_blocks.find(idx) == mode_blocks.end()) mode_blocks[idx] = block;
-            else if(mode_blocks[idx] != block) alto_tensor[i].linear_index &= mask;
+
+            fiber_blocks[idx].insert(block);
         }
 
-        for(int i = 0; i < alto_tensor.size(); i++){
-            int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
+        for (int i = 0; i < alto_tensor.size(); ++i) {
+            S lin_idx = alto_tensor[i].linear_index;
+            int idx = get_mode_idx(lin_idx, mode);
             int block = determine_block(i);
-            if(mode_blocks[idx] != block) alto_tensor[i].linear_index &= mask;
+
+            // If fiber spans multiple blocks, mark this entry as a boundary
+            if (fiber_blocks[idx].size() > 1) {
+                alto_tensor[i].linear_index |= boundary_mask;
+            }
         }
     }
 
@@ -349,48 +368,51 @@ public:
         int shift = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
         int num_fibers = (mode == 1) ? this->cols * this->depth:
                         (mode == 2) ? this->rows * this->depth : this->rows * this->cols;
-    
+
         if(this->nnz_entries/num_fibers < 4){
             set_boundaries(mode); //Set the boundary bits
+            int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
+            S mask = S(1) << num_bits;
 
-            #pragma omp parallel for schedule(static)
-            int thread_id = omp_get_thread_num();
-            int start = 0; int end = partitions[thread_id];
-            if(thread_id > 0) start = partitions[thread_id-1];
+            #pragma omp parallel
+            {
+                int thread_id = omp_get_thread_num();
+                int start = 0; int end = partitions[thread_id];
+                if(thread_id > 0) start = partitions[thread_id-1];
+                for (int m = start; m < end; ++m) {
+                    S idx = alto_tensor[m].linear_index;
+                    T val = alto_tensor[m].value;
+                    uint64_t test = idx >> shift;
+                    bool boundary = (idx >> shift) & S(1) != 0;
+                    idx &= ~mask;
+                    int i = get_mode_idx(idx, 1);
+                    int j = get_mode_idx(idx, 2);
+                    int k = get_mode_idx(idx, 3);
             
-
-            for (int m = start; m < end; ++m) {
-                S idx = alto_tensor[m].linear_index;
-                int i = get_mode_idx(idx, 1);
-                int j = get_mode_idx(idx, 2);
-                int k = get_mode_idx(idx, 3);
-                T val = alto_tensor[m].value;
-        
-                for (int r = 0; r < this->rank; ++r) {
-                    bool boundary = (idx >> shift) & S(1);
-        
-                    if (mode == 1) {
-                        if (boundary) {
-                            #pragma omp atomic
-                            mode_1_fmat[i][r] += val * mode_2_fmat[j][r] * mode_3_fmat[k][r];
-                        } else {
-                            mode_1_fmat[i][r] += val * mode_2_fmat[j][r] * mode_3_fmat[k][r];
+                    for (int r = 0; r < this->rank; ++r) {
+                        if (mode == 1) {
+                            if (boundary) {
+                                #pragma omp atomic
+                                this->mode_1_fmat[i][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
+                            } else {
+                                this->mode_1_fmat[i][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
+                            }
                         }
-                    }
-                    else if (mode == 2) {
-                        if (boundary) {
-                            #pragma omp atomic
-                            mode_2_fmat[j][r] += val * mode_1_fmat[i][r] * mode_3_fmat[k][r];
-                        } else {
-                            mode_2_fmat[j][r] += val * mode_1_fmat[i][r] * mode_3_fmat[k][r];
+                        else if (mode == 2) {
+                            if (boundary) {
+                                #pragma omp atomic
+                                this->mode_2_fmat[j][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r];
+                            } else {
+                                this->mode_2_fmat[j][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r];
+                            }
                         }
-                    }
-                    else{
-                        if (boundary) {
-                            #pragma omp atomic
-                            mode_3_fmat[k][r] += val * mode_1_fmat[i][r] * mode_2_fmat[j][r];
-                        } else {
-                            mode_3_fmat[k][r] += val * mode_1_fmat[i][r] * mode_2_fmat[j][r];
+                        else{
+                            if (boundary) {
+                                #pragma omp atomic
+                                this->mode_3_fmat[k][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r];
+                            } else {
+                                this->mode_3_fmat[k][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r];
+                            }
                         }
                     }
                 }
@@ -398,65 +420,65 @@ public:
             reset_boundaries();
         }
         else{
-            #pragma omp parallel for schedule(static)
-            int thread_id = omp_get_thread_num();
-            int start = 0; int end = partitions[thread_id];
-            if(thread_id > 0) start = partitions[thread_id-1];
+            #pragma omp parallel
+            {
+                int thread_id = omp_get_thread_num();
+                int start = 0;
+                int end = partitions[thread_id];
+                if (thread_id > 0) start = partitions[thread_id - 1];
+                int block_length = end - start;
 
-            T*** temp_arr = new T**[end - start];
-            int* offset_arr = new int[end - start];
-            std::pair<int,int> interval = determine_interval(mode,m);
-            int range = interval.second - interval.first + 1;
+                int block_offset = determine_block_offset(mode, thread_id);
+                int block_limit = determine_block_limit(mode, thread_id);
+                int mode_range = block_limit - block_offset + 1;
 
-            for (int m = start; m < end; ++m) {
-                S idx = alto_tensor[m].linear_index;
-                int i = get_mode_idx(idx, 1);
-                int j = get_mode_idx(idx, 2);
-                int k = get_mode_idx(idx, 3);
-                T val = alto_tensor[m].value;
-
-
-                offset_arr[m-start] = interval.first;
-                temp_arr[m-start] = new T*[range];
-                for(int z = 0; z < range; z++){
-                    temp_arr[m-start][z] = new T[this->rank];
+                T** temp_arr = new T*[mode_range];
+                for (int i = 0; i < mode_range; ++i) {
+                    temp_arr[i] = new T[this->rank](); // zero-initialize!
                 }
-        
-                for (int r = 0; r < this->rank; ++r) {
-        
-                    if (mode == 1) {
-                        temp_arr[m - start][i - interval.first][r] += val * mode_2_fmat[j][r] * mode_3_fmat[k][r];
-                    }
-                    else if (mode == 2) {
-                        temp_arr[m - start][j - interval.first][r] += val * mode_2_fmat[i][r] * mode_3_fmat[k][r];
-                    } 
-                    else{
-                        temp_arr[m - start][k - interval.first][r] += val * mode_2_fmat[i][r] * mode_3_fmat[j][r];
-                    }
-                }
-            }
-            for(int i = 0; i < end - start; i++){
-                for(int j = 0; j < range; j++){
-                    for(int k = 0; k < this->rank; k++){
-                        if (mode == 1) {
-                            mode_1_fmat[j + interval.first][k] += temp_arr[i][j][k];
-                        }
-                        else if (mode == 2) {
-                            mode_2_fmat[j + interval.first][k] += temp_arr[i][j][k];
-                        } 
-                        else{
-                            mode_3_fmat[j + interval.first][k] += temp_arr[i][j][k];
+
+                for (int m = start; m < end; ++m) {
+
+                    S idx = alto_tensor[m].linear_index;
+                    T val = alto_tensor[m].value;
+
+                    int i = get_mode_idx(idx, 1);
+                    int j = get_mode_idx(idx, 2);
+                    int k = get_mode_idx(idx, 3);
+
+                    for (int r = 0; r < this->rank; ++r) {
+                        try {
+                            if (mode == 1) {
+                                temp_arr[i - block_offset][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
+                            } else if (mode == 2) {
+                                temp_arr[j - block_offset][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r];
+                            } else {
+                                temp_arr[k - block_offset][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r];
+                            }
+                        } catch (...) {
+                            std::cerr << "Thread " << thread_id << ": error accessing factor matrix at r=" << r << "\n";
                         }
                     }
                 }
-            }
-            for(int i = 0; i < end - start; i++){
-                delete_matrix(temp_arr[i],range,this->rank)
-            }
-            delete temp_arr[]
 
+                for (int i = 0; i < mode_range; ++i) {
+                    for (int j = 0; j < this->rank; ++j) {
+                        try {
+                            if (mode == 1) {
+                                this->mode_1_fmat[i + block_offset][j] += temp_arr[i][j];
+                            } else if (mode == 2) {               
+                                this->mode_2_fmat[i + block_offset][j] += temp_arr[i][j];  
+                            } else {
+                                this->mode_3_fmat[i + block_offset][j] += temp_arr[i][j];
+                            }
+                        } catch (...) {
+                            std::cerr << "Thread " << thread_id << ": error writing to output factor matrix at (" << i + start << ", " << j << ")\n";
+                        }
+                    }
+                }
+                this->delete_matrix(temp_arr,mode_range,this->rank); 
+            }
         }
-    
         return (mode == 1) ? this->mode_1_fmat :
                (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
     }
@@ -476,3 +498,21 @@ public:
 };
 
 #endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
