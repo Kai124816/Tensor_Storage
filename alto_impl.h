@@ -143,27 +143,18 @@ protected:
     }
 
     // Returns 1 for mode 1, 2 for mode 2, etc. uses precedence in the case of a tiebreaker
-    int largest_mode(int i, int j, int k, std::vector<int> precedence)
+    int largest_mode(int mode_1_bits, int mode_2_bits, int mode_3_bits)
     {
-        if (i == 0 && j == 0 && k == 0) {
-            return 0; // Invalid mode if all are zero
-        }
+        if(mode_1_bits == 0 && mode_2_bits == 0 && mode_3_bits == 0) return 0;
 
-        int add_on = 3;
-        for(int i=0; i<precedence.size(); i++){
-            if(precedence[i] == 1) i+=add_on;
-            else if(precedence[i] == 2) j+=add_on;
-            else k+=add_on;
-            add_on--;
-        }
+        if((mode_1_bits > mode_2_bits || (mode_1_bits == mode_2_bits && this->rows >= this->cols))
+        && (mode_1_bits > mode_3_bits || (mode_1_bits == mode_3_bits && this->rows >= this->depth))) return 1;
 
-        if (i >= j && i >= k) {
-            return 1;
-        } else if (j >= k) {
-            return 2;
-        } else {
-            return 3;
-        }
+        if(mode_2_bits > mode_3_bits || (mode_2_bits == mode_3_bits && this->cols >= this->depth)) return 2;
+
+        return 3;
+
+
     }
 
     //Create Bit Masks
@@ -173,30 +164,32 @@ protected:
 
         int m1 = this->rows, m2 = this->cols, m3 = this->depth;
 
-        int shift = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
+        int m1_bits = ceiling_log2(this->rows); int m2_bits = ceiling_log2(this->cols); int m3_bits = ceiling_log2(this->depth); 
+
+        int shift = m1_bits + m2_bits + m3_bits;
         S mask = S(1) << (shift-1);
 
         int l1;
-        std::vector<int> order;
 
         while ((m1 != 0 || m2 != 0 || m3 != 0) && mask != 0) {
             //Weight each mode by 10 so the order there in can be a tiebreaker
-            l1 = largest_mode(10 * m1, 10 * m2, 10 * m3, order);
+            l1 = largest_mode(m1_bits,m2_bits,m3_bits);
 
             if (l1 == 0) break; 
             if (l1 == 1) {
                 mode1_mask |= mask;
                 m1 >>= 1;
+                m1_bits--;
             } else if (l1 == 2) {
                 mode2_mask |= mask;
                 m2 >>= 1;
+                m2_bits--;
             } else {
                 mode3_mask |= mask;
                 m3 >>= 1;
+                m3_bits--;
             }
 
-            if (std::find(order.begin(), order.end(), l1) == order.end())
-                order.push_back(l1);
             mask >>= 1;
         }
     }
