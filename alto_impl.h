@@ -29,6 +29,7 @@ template<typename T, typename S>
 class Alto_Tensor_3D : public Tensor_3D<T, S>{
 protected:
     int num_threads; //Threads for MTTKRP
+    int num_bits;
     S mode1_mask = 0; //Mode 1 means rows
     S mode2_mask = 0; //Mode 2 means cols
     S mode3_mask = 0; //Mode 3 means depth
@@ -108,7 +109,6 @@ protected:
     void set_boundaries(int mode)
     {
         std::unordered_map<int, std::unordered_set<int>> fiber_blocks; // fiber idx → set of blocks
-        int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
         S boundary_mask = S(1) << num_bits;
 
         for (int i = 0; i < alto_tensor.size(); ++i) {
@@ -134,7 +134,6 @@ protected:
     //Unencode flag bits
     void reset_boundaries()
     {
-        int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
         S mask = ~(S(1) << num_bits);
         
         for(int i = 0; i < alto_tensor.size(); i++){
@@ -199,7 +198,6 @@ protected:
         if (this->rows == 0 || this->cols == 0 || this->depth == 0) return 0;
     
         S val = 0;
-        int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
     
         for (int i = 0; i < num_bits; ++i) {
             S mask = static_cast<S>(1) << i;
@@ -271,6 +269,7 @@ public:
     //Initializer function with pointer array
     Alto_Tensor_3D(T*** array, int r, int c, int d) : Tensor_3D<T,S>(array, r, c, d)
     {
+        num_bits = ceiling_log2(r) + ceiling_log2(c) + ceiling_log2(d);
         create_masks();
         create_alto_array(array);
         num_threads = ideal_threads();
@@ -281,6 +280,7 @@ public:
     Alto_Tensor_3D(const std::vector<NNZ_Entry<T>>& entry_vec, int r, int c, int d) : 
     Tensor_3D<T,S>(entry_vec, r, c, d)
     {
+        num_bits = ceiling_log2(r) + ceiling_log2(c) + ceiling_log2(d);
         create_masks();
         create_alto_vector(entry_vec);
         num_threads = ideal_threads();
@@ -299,9 +299,9 @@ public:
         }
 
         int coord = 0, bit_pos = 0;
-        int num_bits = sizeof(S) * 8;  // max bit width
+        int length = sizeof(S) * 8;  // max bit width
 
-        for (int i = 0; i < num_bits; ++i) {
+        for (int i = 0; i < length; ++i) {
             if ((mask >> i) & static_cast<S>(1)) {
                 coord |= ((alto_idx >> i) & static_cast<S>(1)) << bit_pos;
                 ++bit_pos;
@@ -364,7 +364,6 @@ public:
 
         if(this->nnz_entries/num_fibers < 4){
             set_boundaries(mode); //Set the boundary bits
-            int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
             S mask = S(1) << num_bits;
 
             #pragma omp parallel

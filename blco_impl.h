@@ -18,11 +18,14 @@
 template<typename T, typename S>
 class BLCO_Tensor_3D : public Alto_Tensor_3D<T, S>{
 protected:
+    int row_bits;
+    int col_bits;
+    int depth_bits;
     std::pair<std::vector<uint64_t>, std::vector<T>> blco_tensor;
-    std::pair<std::vector<int>, std::vector<int>> block_pointer; 
-    S m1_blco_mask = 0; //m1 means rows
-    S m2_blco_mask = 0; //m2 means cols
-    S m3_blco_mask = 0; //m3 means depth
+    std::vector<int> block_histogram; 
+    uint64_t m1_blco_mask = 0; //m1 means rows
+    uint64_t m2_blco_mask = 0; //m2 means cols
+    uint64_t m3_blco_mask = 0; //m3 means depth
 
     //Function used to sort two vectors
     void sort_pair_by_first(std::pair<std::vector<S>, std::vector<T>>& p) {
@@ -52,7 +55,7 @@ protected:
     {
         if (this->rows == 0 || this->cols == 0 || this->depth == 0) return;
 
-        int m1 = this->rows - 1, m2 = this->cols - 1, m3 = this->depth - 1;
+        int m1 = this->rows, m2 = this->cols, m3 = this->depth;
 
         S mask = 1ULL;
 
@@ -84,9 +87,9 @@ protected:
         int d = this->get_mode_idx(alto_idx,3);
 
         S val = 0;
-        int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
+        int extra_bits = this->num_bits - 64;
 
-        for (int i = 0; i < num_bits; ++i) {
+        for (int i = 0; i < 64; ++i) {
             S mask = static_cast<S>(1) << i;
             if (mask & m1_blco_mask) {
                 if(r & 1ULL) val |= mask;
@@ -101,6 +104,15 @@ protected:
                 d >>= 1;
             }
         }
+
+        if(extra_bits > 0){
+            for (int i = 0; i < extra_bits; ++i) {
+                S mask = static_cast<S>(1) << (64 + i);
+                if(d & 1ULL) val |= mask;
+                d >>= 1;
+            }
+        }
+
 
         return val;
     }
@@ -125,47 +137,37 @@ protected:
     {
         std::pair<std::vector<S>, std::vector<T>> p1 = create_intermediate_tensor();
 
-        int largest_block;
-        if(p1.first[p1.first.size() - 1] <= limit) largest_block = 0;
-        else largest_block = static_cast<int>((p1.first[p1.first.size() - 1] >> 64) & limit);
-
         int limit_bits = 0;
         if constexpr (std::is_same_v<S, __uint128_t>) limit_bits = 1;;
+
+        int largest_block;
+        if(limit_bits){
+            largest_block = static_cast<int>((p1.first[p1.first.size() - 1] >> 64) & limit); 
+            block_histogram.resize(largest_block + 1,0);
+        }
 
         int block_num;
 
         if(limit_bits){
             __uint128_t blco_index;
             for(int i = 0; i < p1.first.size(); i++){
-                __uint128_t shifted = p1.first[i] >> 64;
-                block_num = static_cast<int>((p1.first[i] >> 64) & limit);
+                block_num = static_cast<int>(p1.first[i] >> 64);
                 blco_index = p1.first[i] & limit;
                 static_cast<uint64_t>(blco_index);
                 T val = p1.second[i];
+
                 blco_tensor.first.push_back(blco_index);
                 blco_tensor.second.push_back(val);
-
-                auto it = std::find(block_pointer.first.begin(), block_pointer.first.end(), block_num);
-                if (it != block_pointer.first.end()) {
-                    auto index = std::distance(block_pointer.first.begin(), it);
-                    block_pointer.second[index]++;
-                } else {
-                    block_pointer.first.push_back(block_num);
-                    block_pointer.second.push_back(0);  // <-- Correct way to add new entry
-                }
+                block_histogram[block_num]++;
             }
         }
         else{
             uint64_t blco_index;
-            uint64_t mask = 0xFFFFFFFF;
-            block_pointer.first.push_back(0);
             for(int i = 0; i < p1.first.size(); i++){
-                blco_index = p1.first[i] & mask;
+                blco_index = static_cast<uint64_t>(p1.first[i]);
                 T val = p1.second[i];
                 blco_tensor.first.push_back(blco_index);
                 blco_tensor.second.push_back(val);
-
-                block_pointer.second[0]++;
             }
         }
     }
@@ -173,12 +175,14 @@ protected:
 public:
     BLCO_Tensor_3D(T*** array, int r, int c, int d) : Alto_Tensor_3D<T,S>(array, r, c, d)
     {
+        row_bits = ceiling_log2(r); col_bits = ceiling_log2(c); depth_bits = ceiling_log2(d);
         create_blco_masks();
         create_blco_tensor();
     }
 
     BLCO_Tensor_3D(const std::vector<NNZ_Entry<T>>& entry_vec, int r, int c, int d) : Alto_Tensor_3D<T,S>(entry_vec, r, c, d)
     {
+        row_bits = ceiling_log2(r); col_bits = ceiling_log2(c); depth_bits = ceiling_log2(d);
         create_blco_masks();
         create_blco_tensor();
     }
@@ -186,21 +190,18 @@ public:
     //Get that idx for any given mode based on the BLCO index
     int get_mode_idx_blco(uint64_t blco_index, int vector_index, int mode)
     {
-        S mask = (mode == 1) ? m1_blco_mask :
-                        (mode == 2) ? m2_blco_mask : m3_blco_mask;
-        int num_bits = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth); 
+        S mask = (mode == 1) ? static_cast<S>(m1_blco_mask) :
+                        (mode == 2) ? static_cast<S>(m2_blco_mask) : static_cast<S>(m3_blco_mask);
+
+        if(mode == 3) mask |= static_cast<S>(0xFFFFFFFF) << 64;
 
         S block = static_cast<S>(find_block(vector_index));
         S index = static_cast<S>(blco_index);
         S full_index = index | (block << 64);
         S masked = full_index & mask;
 
-
-        for (int i = 0; i < num_bits; i++) {
-            if(mask & 1ULL) break;
-            masked >>= 1;
-            mask >>=1;
-        }
+        if(mode == 2) masked >>= row_bits;
+        else if(mode == 3) masked >>= row_bits + col_bits;
         
         return static_cast<int>(masked);
     } 
@@ -208,11 +209,15 @@ public:
     //Finds block based on index in blco tensor
     int find_block(int index)
     {
-        int i = 0;
-        for (; i < block_pointer.first.size(); i++) {
-            if (block_pointer.first[i] > index) break;
+        if(block_histogram.size() == 0) return 0;
+        int prefix_sum = -1;
+
+        for(int i = 0; i < block_histogram.size(); i++){
+            prefix_sum += block_histogram[i];
+            if(prefix_sum >= index) return i;
         }
-        return block_pointer.first[i];
+
+        return -1;
     }
 
     //Returns the blco tensor
@@ -227,9 +232,9 @@ public:
         return {m1_blco_mask, m2_blco_mask, m3_blco_mask};
     }
 
-    std::pair<std::vector<int>, std::vector<int>> get_block_pointer()
+    std::vector<int> get_block_pointer()
     {
-        return block_pointer;
+        return block_histogram;
     }
 
     //Used to debug 
