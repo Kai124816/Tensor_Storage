@@ -1,19 +1,6 @@
 #ifndef ALTO_H
 #define ALTO_H
 
-#include <vector>
-#include <iostream>
-#include <stdexcept>
-#include <string>
-#include <numeric>
-#include <algorithm>
-#include <limits>
-#include <cmath>
-#include <sstream>
-#include <initializer_list>
-#include <random>
-#include <type_traits>
-#include <iomanip>
 #include <unordered_map>
 #include <omp.h>
 #include "tensor_impl.h"

@@ -205,7 +205,8 @@ T** MTTKRP(
 }
 
 template<typename T>
-T** create_and_copy_matrix(T** basis, int rows, int cols) {
+T** create_and_copy_matrix(T** basis, int rows, int cols) 
+{
     T** copy_matrix = new T*[rows];
     for (int i = 0; i < rows; ++i)
         copy_matrix[i] = new T[cols];
@@ -219,7 +220,8 @@ T** create_and_copy_matrix(T** basis, int rows, int cols) {
 }
 
 template<typename T>
-int compare_matricies(T** m1, T** m2, int rows, int cols) {
+int compare_matricies(T** m1, T** m2, int rows, int cols) 
+{
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             if (m1[i][j] != m2[i][j]) return 0;
@@ -229,7 +231,8 @@ int compare_matricies(T** m1, T** m2, int rows, int cols) {
 }
 
 template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols) {
+int compare_matricies_id(T** m1, T** m2, int rows, int cols) 
+{
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             if (m1[i][j] != m2[i][j]) {
@@ -239,6 +242,41 @@ int compare_matricies_id(T** m1, T** m2, int rows, int cols) {
     }
     return 1;
 }
+
+template<typename T>
+int compare_matricies_id(T** m1, T** m2, int rows, int cols) 
+{
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            if (m1[i][j] != m2[i][j]) {
+                std::cout << "values " << m1[i][j] << " and " << m2[i][j] << " dont match\n";
+            }
+        }
+    }
+    return 1;
+}
+
+template<typename T>
+T* vectorize_matrix(T** m1, int rows, int cols) 
+{
+    T* ret_vector = new T[rows * cols];
+    for(int i = 0; i < rows; i++){
+        for(int j = 0; j < cols; j++){
+            ret_vector[i * cols + j] = m1[i][j];
+        }
+    }
+
+    return ret_vector;
+}
+
+template<typename T>
+void vector_to_array(T* a1, std::vector<T> v1)
+{
+    for(int i = 0; i < v1.size(); i++){
+        a1[i] = v1[i];
+    }
+}
+
 
 template<typename T>
 void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec) {

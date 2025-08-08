@@ -1,12 +1,3 @@
-#include <iostream>
-#include <cassert>
-#include <vector>
-#include <random>
-#include <unordered_set>
-#include <tuple>
-#include <stdexcept>
-#include <type_traits>
-#include <limits>
 #include "utils.h"
 #include "tensor_impl.h"   
 #include "alto_impl.h"   
@@ -41,23 +32,39 @@ void test_large_blco_tensor()
     const std::pair<std::vector<uint64_t>, std::vector<int>> blco_indexes = blco.get_blco();
 
     std::cout << "BLCO entries:\n";
-    for (int i = 0; i < blco_indexes.first.size(); i++) {
-        std::cout << "Block: " << blco.find_block(i)<< "\n" ;
-        std::cout << "Linear Index: ";  
-        print_uint64(blco_indexes.first[i],bits_printed);
-        std::cout << "Value: " << blco_indexes.second[i] << "\n";
-        std::cout << "\n";
+    for (int i = 0; i < blco_indexes.size(); i++) {
+        int block = blco_indexes[i].block;
+        for(int j = 0; j < blco_indexes[i].indexes.size(); j++){
+            std::cout << "Block: " << block << "\n" ;
+            std::cout << "Linear Index: ";  
+            print_uint64(blco_indexes[i].indexes[j],bits_printed);
+            std::cout << "Value: " << blco_indexes[i].values[j] << "\n";
+            std::cout << "\n";
+        }
     }
     std::cout << "\n";
 
-    for(int i = 0; i<test_vec.size(); i++){
-        int row_ind = blco.get_mode_idx_blco(blco_indexes.first[i],i,1);
-        int col_ind = blco.get_mode_idx_blco(blco_indexes.first[i],i,2);
-        int depth_ind = blco.get_mode_idx_blco(blco_indexes.first[i],i,3);
-        int val = blco_indexes.second[i];
-        find_entry(test_vec, row_ind, col_ind, depth_ind, val);
+    for (int i = 0; i < blco_indexes.size(); i++) {
+        int block = blco_indexes[i].block;
+        for(int j = 0; j < blco_indexes[i].indexes.size(); j++){
+            std::cout << "Block: " << block << "\n" ;
+            std::cout << "Linear Index: ";  
+            print_uint64(blco_indexes[i].indexes[j],bits_printed);
+            std::cout << "Value: " << blco_indexes[i].values[j] << "\n";
+            std::cout << "\n";
+        }
     }
 
+    for (int i = 0; i < blco_indexes.size(); i++) {
+        int block = blco_indexes[i].block;
+        for(int j = 0; j < blco_indexes[i].indexes.size(); j++){
+            int row_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,1);
+            int col_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,2);
+            int depth_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,3);
+            int val = blco_indexes.second[i];
+            find_entry(test_vec, row_ind, col_ind, depth_ind, val);
+        }
+    }
     std::cout << "\n";
 
     std::cout << "Tests finished!\n";
