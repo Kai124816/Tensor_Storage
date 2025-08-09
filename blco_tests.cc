@@ -58,19 +58,12 @@ void test_large_blco_tensor()
     }
 
     for (int i = 0; i < blco_indexes.size(); i++) {
-        std::cout<<"test1\n";
         int block = blco_indexes[i].block;
-        std::cout<<"test2\n";
         for(int j = 0; j < blco_indexes[i].indexes.size(); j++){
-            std::cout<<"test3\n";
             int row_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,1);
-            std::cout<<"test4\n";
             int col_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,2);
-            std::cout<<"test5\n";
             int depth_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,3);
-            std::cout<<"test6\n";
             int val = blco_indexes[i].values[j];
-            std::cout<<"test7\n";
             find_entry(test_vec, row_ind, col_ind, depth_ind, val);
         }
     }
