@@ -2,6 +2,7 @@
 #define ALTO_H
 
 #include <unordered_map>
+#include <unordered_set>
 #include <omp.h>
 #include "tensor_impl.h"
 

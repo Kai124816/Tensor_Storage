@@ -244,19 +244,6 @@ int compare_matricies_id(T** m1, T** m2, int rows, int cols)
 }
 
 template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols) 
-{
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            if (m1[i][j] != m2[i][j]) {
-                std::cout << "values " << m1[i][j] << " and " << m2[i][j] << " dont match\n";
-            }
-        }
-    }
-    return 1;
-}
-
-template<typename T>
 T* vectorize_matrix(T** m1, int rows, int cols) 
 {
     T* ret_vector = new T[rows * cols];

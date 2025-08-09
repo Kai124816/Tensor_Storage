@@ -15,6 +15,8 @@ void test_large_blco_tensor()
 
     std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
 
+    std::cout<<test_vec.size()<<"\n";
+
     std::cout<<"Entries:"<<"\n";
     print_entry_vec(test_vec);
     std::cout<<"\n";
@@ -29,7 +31,7 @@ void test_large_blco_tensor()
     }
     std::cout << "\n";
 
-    const std::pair<std::vector<uint64_t>, std::vector<int>> blco_indexes = blco.get_blco();
+    const std::vector<BLCO_BLOCK_CPU<int>> blco_indexes = blco.get_blco();
 
     std::cout << "BLCO entries:\n";
     for (int i = 0; i < blco_indexes.size(); i++) {
@@ -56,12 +58,19 @@ void test_large_blco_tensor()
     }
 
     for (int i = 0; i < blco_indexes.size(); i++) {
+        std::cout<<"test1\n";
         int block = blco_indexes[i].block;
+        std::cout<<"test2\n";
         for(int j = 0; j < blco_indexes[i].indexes.size(); j++){
-            int row_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,1);
-            int col_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,2);
-            int depth_ind = blco.get_mode_idx_blco(blco_indexes.first[i],block,3);
-            int val = blco_indexes.second[i];
+            std::cout<<"test3\n";
+            int row_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,1);
+            std::cout<<"test4\n";
+            int col_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,2);
+            std::cout<<"test5\n";
+            int depth_ind = blco.get_mode_idx_blco(blco_indexes[i].indexes[j],block,3);
+            std::cout<<"test6\n";
+            int val = blco_indexes[i].values[j];
+            std::cout<<"test7\n";
             find_entry(test_vec, row_ind, col_ind, depth_ind, val);
         }
     }

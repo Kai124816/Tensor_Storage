@@ -1,19 +1,77 @@
-# Ignore object files
+# ===== C++ Build Artifacts =====
+# Object files
 *.o
+*.obj
 
-# Ignore executables (no extension, make-style builds)
-# This ignores all files without an extension
-*[!./]*
+# ===== Binaries =====
+test_*
 
-# Ignore common output binaries (explicitly)
-main
-a.out
+# Static libraries
+*.a
+*.lib
 
-# Ignore VSCode settings
-.vscode/
+# Shared/Dynamic libraries
+*.so
+*.dylib
+*.dll
 
-# Ignore macOS dSYM symbol directories
+# Executables
+*.exe
+*.out
+*.app
+
+# Debugging and profiling
 *.dSYM/
+*.ipch
+*.pdb
+*.idb
+*.stackdump
+*.gcda
+*.gcno
+*.gcov
+*.prof
 
-#Ignore text files
-.txt
+# ===== Binary Files =====
+*.bin
+
+# ===== Build Directories =====
+/build/
+/bin/
+/lib/
+/dist/
+/out/
+/Debug/
+/Release/
+
+# ===== CMake =====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+Makefile.in
+install_manifest.txt
+compile_commands.json
+
+# ===== IDE & Editor Files =====
+# VS Code
+.vscode/
+*.code-workspace
+
+# CLion / JetBrains
+.idea/
+cmake-build-*/
+
+# CodeBlocks
+*.depend
+*.layout
+*.cbp
+
+# ===== OS-Specific Files =====
+.DS_Store
+Thumbs.db
+
+# ===== Text files =====
+*.txt
+
+
+

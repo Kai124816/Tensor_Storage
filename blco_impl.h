@@ -1,7 +1,7 @@
 #ifndef BLCO_H
 #define BLCO_H
 
-#include <hip/hip_runtime.h>
+// #include <hip/hip_runtime.h>
 #include "alto_impl.h"
 
 template<typename T>
@@ -27,7 +27,7 @@ protected:
     int row_bits;
     int col_bits;
     int depth_bits;
-    std::vector<BLCO_BLOCK_CPU> blco_tensor;
+    std::vector<BLCO_BLOCK_CPU<T>> blco_tensor;
     uint64_t m1_blco_mask = 0; //m1 means rows
     uint64_t m2_blco_mask = 0; //m2 means cols
     uint64_t m3_blco_mask = 0; //m3 means depth
@@ -56,9 +56,9 @@ protected:
     }
 
     //Creates an array of BLCO blocks that can be used on the GPU
-    BLCO_BLOCK_GPU* create_blco_array()
+    BLCO_BLOCK_GPU<T>* create_blco_array()
     {
-        BLCO_BLOCK_GPU* arr = new BLCO_BLOCK_GPU[blco_tensor.size()];
+        BLCO_BLOCK_GPU<T>* arr = new BLCO_BLOCK_GPU[blco_tensor.size()];
 
         for(int i = 0; i < blco_tensor.size(); i++){
             arr[i].block = blco_tensor[i].block;
@@ -172,7 +172,7 @@ protected:
                 T val = p1.second[i];
 
                 if(result == -1){
-                    BLCO_BLOCK_CPU new_block;
+                    BLCO_BLOCK_CPU<T> new_block;
                     new_block.block = block_num;
                     new_block.indexes.push_back(blco_index);
                     new_block.values.push_back(val);
@@ -189,7 +189,7 @@ protected:
         else{
             uint64_t blco_index;
 
-            BLCO_BLOCK_CPU b1;
+            BLCO_BLOCK_CPU<T> b1;
             b1.block = 0;
             b1.size = 0;
             blco_tensor.push_back(b1);
@@ -228,9 +228,9 @@ public:
 
         if(mode == 3) mask |= static_cast<S>(0xFFFFFFFF) << 64;
 
-        S block = static_cast<S>(block);
+        S casted_block = static_cast<S>(block);
         S index = static_cast<S>(blco_index);
-        S full_index = index | (block << 64);
+        S full_index = index | (casted_block << 64);
         S masked = full_index & mask;
 
         if(mode == 2) masked >>= row_bits;
@@ -249,7 +249,7 @@ public:
     }
 
     //Returns the blco tensor
-    const std::pair<std::vector<uint64_t>, std::vector<T>>& get_blco() const
+    const std::vector<BLCO_BLOCK_CPU<T>>& get_blco() const
     {
         return blco_tensor;
     }
@@ -261,64 +261,66 @@ public:
     }
 
     //Paralell MTTKRP on GPU
-    void MTTKRP_BLCO(int mode)
-    {
-        int target_mode_size = (mode == 1) ? this->rows:
-                        (mode == 2) ? this->cols : this->depth;
+    // void MTTKRP_BLCO(int mode)
+    // {
+    //     int target_mode_size = (mode == 1) ? this->rows:
+    //                     (mode == 2) ? this->cols : this->depth;
 
-        T** target_fmat = (mode == 1) ? this->mode_1_fmat:
-        (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
+    //     T** target_fmat = (mode == 1) ? this->mode_1_fmat:
+    //     (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
 
-        //Initialize device memory
-        uint64_t d_nnz;
-        uint64_t d_m1_mask, d_m2_mask, d_m3_mask;
-        uint64_t* index_array;
-        T* val_array;
-        T* d_fmat_vector;
-        int d_histogram;
-        int d_m1_bits, d_m2_bits, d_m3_bits;
-        hipMalloc(&d_nnz, sizeof(uint64_t));
-        hipMalloc(&d_m1_mask, sizeof(uint64_t));
-        hipMalloc(&d_m2_mask, sizeof(uint64_t));
-        hipMalloc(&d_m3_mask, sizeof(uint64_t));
-        hipMalloc(&index_array, sizeof(uint64_t) * this->nnz_entries);
-        hipMalloc(&val_array,sizeof(T) * this->nnz_entries);
-        hipMalloc(&d_fmat_vector,sizeof(T) * target_mode_size * this->rank);
-        hipMalloc(&d_histogram, sizeof(int) * block_histogram.size());
-        hipMalloc(&d_m1_bits, sizeof(int));
-        hipMalloc(&d_m2_bits, sizeof(int));
-        hipMalloc(&d_m3_bits, sizeof(int));
+    //     //Initialize device memory
+    //     uint64_t d_nnz;
+    //     uint64_t d_m1_mask, d_m2_mask, d_m3_mask;
+    //     uint64_t* index_array;
+    //     T* val_array;
+    //     T* d_fmat_vector;
+    //     int d_histogram;
+    //     int d_m1_bits, d_m2_bits, d_m3_bits;
+    //     hipMalloc(&d_nnz, sizeof(uint64_t));
+    //     hipMalloc(&d_m1_mask, sizeof(uint64_t));
+    //     hipMalloc(&d_m2_mask, sizeof(uint64_t));
+    //     hipMalloc(&d_m3_mask, sizeof(uint64_t));
+    //     hipMalloc(&index_array, sizeof(uint64_t) * this->nnz_entries);
+    //     hipMalloc(&val_array,sizeof(T) * this->nnz_entries);
+    //     hipMalloc(&d_fmat_vector,sizeof(T) * target_mode_size * this->rank);
+    //     hipMalloc(&d_histogram, sizeof(int) * block_histogram.size());
+    //     hipMalloc(&d_m1_bits, sizeof(int));
+    //     hipMalloc(&d_m2_bits, sizeof(int));
+    //     hipMalloc(&d_m3_bits, sizeof(int));
 
-        T* h_fmat_vector = vectorize_matrix(target_fmat,target_mode_size,this->rank);
+    //     T* h_fmat_vector = vectorize_matrix(target_fmat,target_mode_size,this->rank);
         
-        //Copy host data to GPU
-        hipMemcpy(d_nnz, this->nnz_entries, sizeof(uint64_t), hipMemcpyHostToDevice);
-        hipMemcpy(d_m1_mask, m1_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-        hipMemcpy(d_m2_mask, m2_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-        hipMemcpy(d_m3_mask, m3_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-        hipMemcpy(index_array, blco_tensor.first().data(), sizeof(uint64_t) * this->nnz_entries, hipMemcpyHostToDevice);
-        hipMemcpy(val_array, blco_tensor.second().data(), sizeof(T) * this->nnz_entries, hipMemcpyHostToDevice);
-        hipMemcpy(d_fmat_vector, h_fmat_vector, sizeof(T) * target_mode_size * this->rank, hipMemcpyHostToDevice);
-        hipMemcpy(d_histogram, block_histogram.data(), sizeof(int) * block_histogram.size(), hipMemcpyHostToDevice);
-        hipMemcpy(d_m1_bits, row_bits, sizeof(int), hipMemcpyHostToDevice);
-        hipMemcpy(d_m2_bits, col_bits, sizeof(int), hipMemcpyHostToDevice);
-        hipMemcpy(d_m3_bits, depth_bits, sizeof(int), hipMemcpyHostToDevice);
-    }
+    //     //Copy host data to GPU
+    //     hipMemcpy(d_nnz, this->nnz_entries, sizeof(uint64_t), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m1_mask, m1_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m2_mask, m2_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m3_mask, m3_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+    //     hipMemcpy(index_array, blco_tensor.first().data(), sizeof(uint64_t) * this->nnz_entries, hipMemcpyHostToDevice);
+    //     hipMemcpy(val_array, blco_tensor.second().data(), sizeof(T) * this->nnz_entries, hipMemcpyHostToDevice);
+    //     hipMemcpy(d_fmat_vector, h_fmat_vector, sizeof(T) * target_mode_size * this->rank, hipMemcpyHostToDevice);
+    //     hipMemcpy(d_histogram, block_histogram.data(), sizeof(int) * block_histogram.size(), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m1_bits, row_bits, sizeof(int), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m2_bits, col_bits, sizeof(int), hipMemcpyHostToDevice);
+    //     hipMemcpy(d_m3_bits, depth_bits, sizeof(int), hipMemcpyHostToDevice);
+    // }
 
 
     //Used to debug 
     void debug_linear_indices() override
     {
-        BLCO_BLOCK_CPU block;
+        BLCO_BLOCK_CPU<T> b1;
+        int block;
         for (int i = 0; i < blco_tensor.size(); i++) {
-            block = blco_tensor[i];
-            for(int j = 0; j < block.indexes.size(); j++){
-                std::cout << "Block: " << block.block;
-                    << "Index: " << block.block_indexes[j]
-                    << ", i=" << get_mode_idx(block.block_indexes[j], 1)
-                    << ", j=" << get_mode_idx(block.block_indexes[j], 2)
-                    << ", k=" << get_mode_idx(block.block_indexes[j], 3)
-                    << ", val=" << e.value << "\n";
+            b1 = blco_tensor[i];
+            block = b1.block;
+            for(int j = 0; j < b1.indexes.size(); j++){
+                std::cout << "Block: " << b1.block
+                    << "Index: " << b1.indexes[j]
+                    << ", i=" << get_mode_idx_blco(b1.indexes[j], block, 1)
+                    << ", j=" << get_mode_idx_blco(b1.indexes[j], block, 2)
+                    << ", k=" << get_mode_idx_blco(b1.indexes[j], block, 3)
+                    << ", val=" << b1.values[j] << "\n";
             }
         }
     }
