@@ -43,6 +43,9 @@ test_*
 /Debug/
 /Release/
 
+# ===== Reference Code Directories =====
+/ref/
+
 # ===== CMake =====
 CMakeCache.txt
 CMakeFiles/

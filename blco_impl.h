@@ -1,7 +1,7 @@
 #ifndef BLCO_H
 #define BLCO_H
 
-// #include <hip/hip_runtime.h>
+#include <hip/hip_runtime.h>
 #include "alto_impl.h"
 
 template<typename T>
@@ -22,7 +22,8 @@ struct BLCO_BLOCK_GPU {
 
 
 template<typename T, typename S>
-class BLCO_Tensor_3D : public Alto_Tensor_3D<T, S>{
+class BLCO_Tensor_3D : public Alto_Tensor_3D<T, S>
+{
 protected:
     int row_bits;
     int col_bits;
@@ -33,7 +34,8 @@ protected:
     uint64_t m3_blco_mask = 0; //m3 means depth
 
     //Function used to sort two vectors
-    void sort_pair_by_first(std::pair<std::vector<S>, std::vector<T>>& p) {
+    void sort_pair_by_first(std::pair<std::vector<S>, std::vector<T>>& p) 
+    {
         std::vector<size_t> indices(p.first.size());
         std::iota(indices.begin(), indices.end(), 0);  // 0, 1, 2, ...
 
@@ -53,20 +55,6 @@ protected:
         // Replace original vectors
         p.first = std::move(sorted_first);
         p.second = std::move(sorted_second);
-    }
-
-    //Creates an array of BLCO blocks that can be used on the GPU
-    BLCO_BLOCK_GPU<T>* create_blco_array()
-    {
-        BLCO_BLOCK_GPU<T>* arr = new BLCO_BLOCK_GPU[blco_tensor.size()];
-
-        for(int i = 0; i < blco_tensor.size(); i++){
-            arr[i].block = blco_tensor[i].block;
-            arr[i].size = blco_tensor[i].size;
-            arr[i].indexes =  new uint64_t[blco_tensor[i].size];
-            arr[i].values = new T[blco_tensor[i].size];
-            vector_to_array(arr[i].indexes, blco_tensor[i].indexes);
-        }
     }
 
     //Function to help create masks for BLCO format
@@ -131,7 +119,6 @@ protected:
                 d >>= 1;
             }
         }
-
 
         return val;
     }
@@ -205,6 +192,142 @@ protected:
         }
     }
 
+    void blocks_to_gpu(BLCO_BLOCK_GPU<T>* gpu_block_arr)
+    {
+        // Temporary copy to modify before sending to GPU
+        BLCO_BLOCK_GPU<T>* h_arr_for_gpu = new MyStruct[this->nnz_entries];
+        int num_elements;
+
+        // For each struct: allocate GPU memory for `values`, copy data, then update pointer
+        for (int i = 0; i < this->nnz_entries; i++) {
+            num_elements = blco_tensor[i].size;
+
+            //Copy Values
+            T* d_values;
+            hipMalloc(&d_values, num_elements * sizeof(T));
+            hipMemcpy(d_values, blco_tensor[i].indexes.data(), num_elements * sizeof(T), hipMemcpyHostToDevice);
+
+            //Copy indexes
+            uint64_t* d_indexes;
+            hipMalloc(&d_indexes, num_elements * sizeof(uint64_t));
+            hipMemcpy(d_indexes, blco_tensor[i].values.data(), num_elements * sizeof(uint64_t), hipMemcpyHostToDevice);
+            
+            // Copy host struct but replace pointer with device pointer
+            h_arr_for_gpu[i].size = num_elements;
+            h_arr_for_gpu[i].block = blco_tensor[i].block;
+            h_arr_for_gpu[i].indexes = d_indexes;
+            h_arr_for_gpu[i].values = d_values;
+        }
+
+        hipMemcpy(gpu_block_arr, h_arr_for_gpu, this->nnz_entries * sizeof(BLCO_BLOCK_GPU), hipMemcpyHostToDevice);
+
+        for (int i = 0; i < N; i++) {
+            hipFree(h_arr_for_gpu[i].indexes);
+            hipFree(h_arr_for_gpu[i].values);
+        }
+        
+        // Finally free the host helper array
+        delete[] h_arr_for_gpu;
+
+    }
+
+    __device__ uint64_t extract_linear_index(BLCO_BLOCK_GPU* tensor, int nnz, int num_blocks)
+    {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        int prefix_sum = 0;
+        int offset;
+
+        for(int i = 0; i < num_blocks; i++){
+            if(idx < prefix_sum + tensor[i].size){
+                offset = idx - prefix_sum;
+                return tensor[i].indexes[offset];
+            }
+            prefix_sum += tensor[i].size
+        }
+
+        return -1;
+    }
+
+    __device__ T extract_value(BLCO_BLOCK_GPU* tensor, int nnz, int num_blocks)
+    {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        int prefix_sum = 0;
+        int offset;
+
+        for(int i = 0; i < num_blocks; i++){
+            if(idx < prefix_sum + tensor[i].size){
+                offset = idx - prefix_sum;
+                return tensor[i].values[offset];
+            }
+            prefix_sum += tensor[i].size
+        }
+
+        return -1;
+    }
+
+    __device__ T lin_idx_to_value(BLCO_BLOCK_GPU* tensor, int nnz, int num_blocks)
+    {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        int prefix_sum = 0;
+        int offset;
+
+        for(int i = 0; i < num_blocks; i++){
+            if(idx < prefix_sum + tensor[i].size){
+                offset = idx - prefix_sum;
+                return tensor[i].values[offset];
+            }
+            prefix_sum += tensor[i].size
+        }
+
+        return -1;
+    }
+
+    __device__ int extract_mode (uint64_t linear_idx, uint64_t mode_mask, int ext_shift, int shift, int block)
+    {
+        uint64_t ret_val = (linear_idx & mode_mask) >> shift;
+        
+        if(ext_shift != 0){
+            ret_val &= block << ext_shift;
+        }
+
+        static_cast<int>(ret_val); 
+    }
+
+    __device__ void sort_by_mode(int &mode, int &block, uint64_t &lin_idx, int warp_size = 64) 
+    {
+        const int lane = threadIdx.x & (warp_size - 1);
+
+        for (int k = 2; k <= warp_size; k <<= 1){
+            // Outer loop: size of subsequence being merged
+            for (int j = k >> 1; j > 0; j >>= 1) {
+                int partner_mode = __shfl_xor(mode, j, warp_size);
+                uint64_t partner_lin_idx = __shfl_xor(lin_idx, j, warp_size);
+                int partner_block = __shfl_xor(partner_block, j, warp_size);
+
+                // Determine sort direction based on current subsequence
+                bool dir = ((lane & (k)) == 0);
+
+                // Perform compare–swap
+                int new_mode;
+                uint64_t new_idx;
+                int new_block;
+                if ((mode > partner_mode) == dir){
+                    new_mode = partner_mode;
+                    new_idx = partner_lin_idx;
+                    new_block = partner_block;
+                }
+                else{
+                    new_mode = mode;
+                    new_idx = lin_idx;
+                    new_block = block;
+                }
+
+                mode = new_mode;
+                lin_idx = new_idx;
+            }
+        }
+    }
+
 public:
     BLCO_Tensor_3D(T*** array, int r, int c, int d) : Alto_Tensor_3D<T,S>(array, r, c, d)
     {
@@ -261,49 +384,43 @@ public:
     }
 
     //Paralell MTTKRP on GPU
-    // void MTTKRP_BLCO(int mode)
-    // {
-    //     int target_mode_size = (mode == 1) ? this->rows:
-    //                     (mode == 2) ? this->cols : this->depth;
+    void MTTKRP_BLCO(int mode)
+    {
+        int target_mode_size = (mode == 1) ? this->rows:
+        (mode == 2) ? this->cols : this->depth;
 
-    //     T** target_fmat = (mode == 1) ? this->mode_1_fmat:
-    //     (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
+        T** target_fmat = (mode == 1) ? this->mode_1_fmat:
+        (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
 
-    //     //Initialize device memory
-    //     uint64_t d_nnz;
-    //     uint64_t d_m1_mask, d_m2_mask, d_m3_mask;
-    //     uint64_t* index_array;
-    //     T* val_array;
-    //     T* d_fmat_vector;
-    //     int d_histogram;
-    //     int d_m1_bits, d_m2_bits, d_m3_bits;
-    //     hipMalloc(&d_nnz, sizeof(uint64_t));
-    //     hipMalloc(&d_m1_mask, sizeof(uint64_t));
-    //     hipMalloc(&d_m2_mask, sizeof(uint64_t));
-    //     hipMalloc(&d_m3_mask, sizeof(uint64_t));
-    //     hipMalloc(&index_array, sizeof(uint64_t) * this->nnz_entries);
-    //     hipMalloc(&val_array,sizeof(T) * this->nnz_entries);
-    //     hipMalloc(&d_fmat_vector,sizeof(T) * target_mode_size * this->rank);
-    //     hipMalloc(&d_histogram, sizeof(int) * block_histogram.size());
-    //     hipMalloc(&d_m1_bits, sizeof(int));
-    //     hipMalloc(&d_m2_bits, sizeof(int));
-    //     hipMalloc(&d_m3_bits, sizeof(int));
+        //Initialize device memory
+        uint64_t d_nnz;
+        uint64_t d_m1_mask, d_m2_mask, d_m3_mask;
+        BLCO_BLOCK_GPU<T>* blocks;
+        T* d_fmat_vector;
+        int d_m1_bits, d_m2_bits, d_m3_bits;
+        hipMalloc(&d_nnz, sizeof(uint64_t));
+        hipMalloc(&d_m1_mask, sizeof(uint64_t));
+        hipMalloc(&d_m2_mask, sizeof(uint64_t));
+        hipMalloc(&d_m3_mask, sizeof(uint64_t));
+        hipMalloc(&blocks,sizeof(BLCO_BLOCK_GPU<T>) * this->nnz_entries);
+        hipMalloc(&d_fmat_vector,sizeof(T) * target_mode_size * this->rank);
+        hipMalloc(&d_m1_bits, sizeof(int));
+        hipMalloc(&d_m2_bits, sizeof(int));
+        hipMalloc(&d_m3_bits, sizeof(int));
 
-    //     T* h_fmat_vector = vectorize_matrix(target_fmat,target_mode_size,this->rank);
+        T* h_fmat_vector = vectorize_matrix(target_fmat,target_mode_size,this->rank);
         
-    //     //Copy host data to GPU
-    //     hipMemcpy(d_nnz, this->nnz_entries, sizeof(uint64_t), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m1_mask, m1_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m2_mask, m2_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m3_mask, m3_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
-    //     hipMemcpy(index_array, blco_tensor.first().data(), sizeof(uint64_t) * this->nnz_entries, hipMemcpyHostToDevice);
-    //     hipMemcpy(val_array, blco_tensor.second().data(), sizeof(T) * this->nnz_entries, hipMemcpyHostToDevice);
-    //     hipMemcpy(d_fmat_vector, h_fmat_vector, sizeof(T) * target_mode_size * this->rank, hipMemcpyHostToDevice);
-    //     hipMemcpy(d_histogram, block_histogram.data(), sizeof(int) * block_histogram.size(), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m1_bits, row_bits, sizeof(int), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m2_bits, col_bits, sizeof(int), hipMemcpyHostToDevice);
-    //     hipMemcpy(d_m3_bits, depth_bits, sizeof(int), hipMemcpyHostToDevice);
-    // }
+        //Copy host data to GPU
+        hipMemcpy(d_nnz, this->nnz_entries, sizeof(uint64_t), hipMemcpyHostToDevice);
+        hipMemcpy(d_m1_mask, m1_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+        hipMemcpy(d_m2_mask, m2_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+        hipMemcpy(d_m3_mask, m3_blco_mask, sizeof(uint64_t), hipMemcpyHostToDevice);
+        hipMemcpy(d_fmat_vector, h_fmat_vector, sizeof(T) * target_mode_size * this->rank, hipMemcpyHostToDevice);
+        hipMemcpy(d_m1_bits, row_bits, sizeof(int), hipMemcpyHostToDevice);
+        hipMemcpy(d_m2_bits, col_bits, sizeof(int), hipMemcpyHostToDevice);
+        hipMemcpy(d_m3_bits, depth_bits, sizeof(int), hipMemcpyHostToDevice);
+        blocks_to_gpu(blocks);
+    }
 
 
     //Used to debug 
@@ -325,6 +442,5 @@ public:
         }
     }
 };
-
 
 #endif

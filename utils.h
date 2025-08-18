@@ -1,35 +1,32 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <vector>
-#include <string>
-#include <cstdint>
-#include <iostream>
-#include <sstream>
-#include <iomanip>
-#include <cmath>
-#include <random>
-#include <stdexcept>
+// ==========================
+// Standard Library Includes
+// ==========================
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <exception>
+#include <iomanip>
+#include <iostream>
 #include <numeric>
+#include <random>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
+#include <vector>
 
-// Maximum 64 bit unsigned integer (extern to avoid multiple definitions)
+// ==========================
+// Constants
+// ==========================
+// Maximum 64-bit unsigned integer (extern to avoid multiple definitions)
 extern __uint128_t limit = 0xFFFFFFFFFFFFFFFF;
 
-// Print bits functions
-void print_lsb_bits(__uint128_t value, int x);
-void print_uint64(uint64_t value, int x);
-std::string uint128_to_sci_string(__uint128_t value, int precision = 15);
-
-// Mathematical functions
-int byte_size(int r, int c, int d);
-template<typename S>
-int floor_log2(S x);
-template<typename S>
-int ceiling_log2(S x);
-
-// Non-zero entry struct
+// ==========================
+// Structs
+// ==========================
 template<typename T>
 struct NNZ_Entry {
     int i;
@@ -38,6 +35,21 @@ struct NNZ_Entry {
     T value;            
 };
 
+// ==========================
+// Forward Declarations
+// ==========================
+
+// --- Bit / Printing Utilities ---
+void print_lsb_bits(__uint128_t value, int x);
+void print_uint64(uint64_t value, int x);
+std::string uint128_to_sci_string(__uint128_t value, int precision = 15);
+
+// --- Math Utilities ---
+int byte_size(int r, int c, int d);
+template<typename S> int floor_log2(S x);
+template<typename S> int ceiling_log2(S x);
+
+// --- Sparse Tensor Utilities ---
 template<typename T>
 std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
     int rows, int cols, int depth,
@@ -47,35 +59,29 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
 template<typename T>
 void find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val);
 
-// MTTKRP function
+// --- MTTKRP ---
 template<typename T>
-T** MTTKRP(
-    int mode,
-    T** M,
-    T** A, T** B,
-    int R,
-    const std::vector<NNZ_Entry<T>>& entries);
+T** MTTKRP(int mode, T** M, T** A, T** B, int R,
+           const std::vector<NNZ_Entry<T>>& entries);
 
-// Matrix functions
-template<typename T>
-T** create_and_copy_matrix(T** basis, int rows, int cols);
+// --- Matrix Utilities ---
+template<typename T> T** create_and_copy_matrix(T** basis, int rows, int cols);
+template<typename T> int compare_matricies(T** m1, T** m2, int rows, int cols);
+template<typename T> int compare_matricies_id(T** m1, T** m2, int rows, int cols);
+template<typename T> T* vectorize_matrix(T** m1, int rows, int cols);
+template<typename T> void vector_to_array(T* a1, std::vector<T> v1);
 
-template<typename T>
-int compare_matricies(T** m1, T** m2, int rows, int cols);
+// --- Printing Helpers ---
+template<typename T> void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec);
+template<typename T> void print_matrix(T** matrix, int rows, int cols, int width = 6);
 
-template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols);
+// ==========================
+// Template / Inline Definitions
+// ==========================
 
-// Print functions
-template<typename T>
-void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec);
-
-template<typename T>
-void print_matrix(T** matrix, int rows, int cols, int width = 6);
-
+// --- Math Utilities ---
 template<typename S>
-int floor_log2(S x) 
-{
+int floor_log2(S x) {
     int res = -1;
     while (x) {
         x >>= 1;
@@ -85,10 +91,8 @@ int floor_log2(S x)
 }
 
 template<typename S>
-int ceiling_log2(S x)
-{
+int ceiling_log2(S x) {
     if (x == 1) return 0;
-
     int res = 0;
     while (x) {
         x >>= 1;
@@ -97,11 +101,12 @@ int ceiling_log2(S x)
     return res;
 }
 
+// --- Sparse Tensor Utilities ---
 template<typename T>
 std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
     int rows, int cols, int depth,
     float density, T min_val, T max_val,
-    int block_size, int max_blocks)
+    int block_size, int max_blocks) 
 {
     if (rows <= 0 || cols <= 0 || depth <= 0)
         throw std::invalid_argument("All dimensions must be positive.");
@@ -155,7 +160,6 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
             for (int j = j0; j < bj_max && nnz_count < target_nnz; ++j) {
                 for (int k = k0; k < bk_max && nnz_count < target_nnz; ++k) {
                     if (dropout_dist(rng) < 0.5f) continue;
-
                     entries.push_back({i, j, k, generate_value()});
                     ++nnz_count;
                 }
@@ -178,13 +182,10 @@ void find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val)
     std::cout << r << " " << c << " " << d << "\n";
 }
 
+// --- MTTKRP ---
 template<typename T>
-T** MTTKRP(
-    int mode,
-    T** M,
-    T** A, T** B,
-    int R,
-    const std::vector<NNZ_Entry<T>>& entries) 
+T** MTTKRP(int mode, T** M, T** A, T** B, int R,
+           const std::vector<NNZ_Entry<T>>& entries) 
 {
     for (const auto& entry : entries) {
         for (int r = 0; r < R; ++r) {
@@ -204,67 +205,51 @@ T** MTTKRP(
     return M;
 }
 
+// --- Matrix Utilities ---
 template<typename T>
-T** create_and_copy_matrix(T** basis, int rows, int cols) 
-{
+T** create_and_copy_matrix(T** basis, int rows, int cols) {
     T** copy_matrix = new T*[rows];
     for (int i = 0; i < rows; ++i)
         copy_matrix[i] = new T[cols];
-
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
             copy_matrix[i][j] = basis[i][j];
-        }
-    }
     return copy_matrix;
 }
 
 template<typename T>
-int compare_matricies(T** m1, T** m2, int rows, int cols) 
-{
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
+int compare_matricies(T** m1, T** m2, int rows, int cols) {
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
             if (m1[i][j] != m2[i][j]) return 0;
-        }
-    }
     return 1;
 }
 
 template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols) 
-{
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            if (m1[i][j] != m2[i][j]) {
+int compare_matricies_id(T** m1, T** m2, int rows, int cols) {
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
+            if (m1[i][j] != m2[i][j])
                 std::cout << "values " << m1[i][j] << " and " << m2[i][j] << " dont match\n";
-            }
-        }
-    }
     return 1;
 }
 
 template<typename T>
-T* vectorize_matrix(T** m1, int rows, int cols) 
-{
+T* vectorize_matrix(T** m1, int rows, int cols) {
     T* ret_vector = new T[rows * cols];
-    for(int i = 0; i < rows; i++){
-        for(int j = 0; j < cols; j++){
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
             ret_vector[i * cols + j] = m1[i][j];
-        }
-    }
-
     return ret_vector;
 }
 
 template<typename T>
-void vector_to_array(T* a1, std::vector<T> v1)
-{
-    for(int i = 0; i < v1.size(); i++){
+void vector_to_array(T* a1, std::vector<T> v1) {
+    for (int i = 0; i < v1.size(); i++)
         a1[i] = v1[i];
-    }
 }
 
-
+// --- Printing Helpers ---
 template<typename T>
 void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec) {
     for (size_t i = 0; i < entry_vec.size(); ++i) {
@@ -282,14 +267,15 @@ void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec) {
 template<typename T>
 void print_matrix(T** matrix, int rows, int cols, int width) {
     for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
+        for (int j = 0; j < cols; ++j)
             std::cout << std::setw(width) << matrix[i][j] << " ";
-        }
         std::cout << "\n";
     }
 }
 
-
+// ==========================
+// Non-template Implementations
+// ==========================
 void print_lsb_bits(__uint128_t value, int x) {
     if (x < 1 || x > 128) {
         std::cerr << "Error: x must be between 1 and 128\n";
@@ -338,7 +324,6 @@ int byte_size(int r, int c, int d) {
     if ((__uint128_t)r * c * d >= limit) return 128;
     return 64;
 }
-
 
 
 #endif
