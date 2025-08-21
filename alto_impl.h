@@ -353,22 +353,46 @@ public:
         if(this->nnz_entries/num_fibers < 4){
             set_boundaries(mode); //Set the boundary bits
             S mask = S(1) << num_bits;
+            int size = alto_tensor.size();
 
             #pragma omp parallel
             {
                 int thread_id = omp_get_thread_num();
                 int start = 0; int end = partitions[thread_id];
                 if(thread_id > 0) start = partitions[thread_id-1];
+
+                #pragma unroll
                 for (int m = start; m < end; ++m) {
                     S idx = alto_tensor[m].linear_index;
                     T val = alto_tensor[m].value;
-                    uint64_t test = idx >> shift;
                     bool boundary = (idx >> shift) & S(1) != 0;
                     idx &= ~mask;
                     int i = get_mode_idx(idx, 1);
                     int j = get_mode_idx(idx, 2);
                     int k = get_mode_idx(idx, 3);
-            
+                    if(i > this->rows || i < 0){
+                        std::cout<<"i: "<<i<<" is less/greater than rows:"<<this->rows<<"\n";
+                    }
+                    if(j > this->cols || j < 0){
+                        std::cout<<"i: "<<j<<" is less/greater than cols:"<<this->cols<<"\n";
+                    }
+                    if(k > this->depth || k < 0){
+                        std::cout<<"k: "<<k<<" is less/greater than depth:"<<this->depth<<"\n";
+                    }
+                    if(!std::is_integral<decltype(i)>::value){
+                        std::cout<<"i: "<<i<<" is not an int\n";
+                    }
+                    if(!std::is_integral<decltype(j)>::value){
+                        std::cout<<"j: "<<j<<" is not an int\n";
+                    }
+                    if(!std::is_integral<decltype(k)>::value){
+                        std::cout<<"k: "<<k<<" is not an int\n";
+                    }
+                    if(!std::is_integral<decltype(val)>::value){
+                        std::cout<<"val: "<<val<<" is not an int\n";
+                    }
+
+                    #pragma unroll
                     for (int r = 0; r < this->rank; ++r) {
                         if (mode == 1) {
                             if (boundary) {
@@ -397,6 +421,7 @@ public:
                     }
                 }
             }
+            std::cout<<"test\n";
             reset_boundaries();
         }
         else{
@@ -417,6 +442,7 @@ public:
                     temp_arr[i] = new T[this->rank](); // zero-initialize!
                 }
 
+                #pragma unroll
                 for (int m = start; m < end; ++m) {
 
                     S idx = alto_tensor[m].linear_index;
@@ -426,6 +452,7 @@ public:
                     int j = get_mode_idx(idx, 2);
                     int k = get_mode_idx(idx, 3);
 
+                    #pragma unroll
                     for (int r = 0; r < this->rank; ++r) {
                         try {
                             if (mode == 1) {
@@ -441,6 +468,7 @@ public:
                     }
                 }
 
+                #pragma unroll
                 for (int i = 0; i < mode_range; ++i) {
                     for (int j = 0; j < this->rank; ++j) {
                         try {

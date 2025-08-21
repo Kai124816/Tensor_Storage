@@ -338,8 +338,49 @@ void alto_mttkrp_paralell_6()
     std::cout<<"\n";
 }
 
+//MTTKRP with a real life tensor from a tns file
+void alto_mttkrp_paralell_file_input(const std::string &filename)
+{
+    std::cout << "Testing ALTO MTTKRP Paralell version - with a Tensor file\n";
+    std::cout << "\n";
+
+    const int R = 23344784, C = 23344784, D = 166;
+
+    float freq = 0.024f;
+
+    std::vector<NNZ_Entry<int>> test_vec = read_tensor_file<int>(filename,99546551);
+
+    if(test_vec.empty()) return;
+
+    std::cout<<"constructing tensor\n";
+
+    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
+
+    std::vector<int**> fmats = alto.get_fmats();
+    int** input_matrix = fmats[0];
+    int** copy_input_matrix = create_and_copy_matrix(input_matrix,R,alto.get_rank());
+
+    std::cout<<"Performing MTTKRP algorithm in parallel\n";
+    int** output_matrix = alto.MTTKRP_Alto_Parallel(1);
+
+    int** test_matrix = MTTKRP(1,copy_input_matrix,alto.get_fmats()[1],alto.get_fmats()[2],alto.get_rank(),test_vec);
+
+    std::cout<<"Comparing output to test matrix\n";
+    if(compare_matricies(output_matrix,test_matrix,R,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
+    else std::cout<<"Test Failed!"<<"\n";
+
+    for(int i = 0; i < R; i++){
+        delete[] copy_input_matrix[i];
+    }
+    delete[] copy_input_matrix;
+
+    std::cout<<"\n";
+}
+
+
+
 
 int main() {
-    test_large_alto_tensor();
+    alto_mttkrp_paralell_file_input("fb-m.tns");
     return 0;
 };

@@ -10,6 +10,7 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <fstream>
 #include <numeric>
 #include <random>
 #include <sstream>
@@ -167,6 +168,32 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
         }
     }
 
+    return entries;
+}
+
+template<typename T>
+std::vector<NNZ_Entry<T>> read_tensor_file(const std::string &filename, size_t maxLines = 0) 
+{
+    //Assumes file is 1 indexed
+    std::ifstream file(filename);
+    std::vector<NNZ_Entry<T>> entries;
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return entries;
+    }
+
+    int i, j, k;
+    T value;
+    size_t count = 0;
+
+    while (file >> i >> j >> k >> value) {
+        entries.push_back({i-1, j-1, k-1, value});
+        count++;
+        if (maxLines > 0 && count >= maxLines) break;
+    }
+
+    file.close();
     return entries;
 }
 
