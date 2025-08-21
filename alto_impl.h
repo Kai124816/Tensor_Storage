@@ -370,27 +370,6 @@ public:
                     int i = get_mode_idx(idx, 1);
                     int j = get_mode_idx(idx, 2);
                     int k = get_mode_idx(idx, 3);
-                    if(i > this->rows || i < 0){
-                        std::cout<<"i: "<<i<<" is less/greater than rows:"<<this->rows<<"\n";
-                    }
-                    if(j > this->cols || j < 0){
-                        std::cout<<"i: "<<j<<" is less/greater than cols:"<<this->cols<<"\n";
-                    }
-                    if(k > this->depth || k < 0){
-                        std::cout<<"k: "<<k<<" is less/greater than depth:"<<this->depth<<"\n";
-                    }
-                    if(!std::is_integral<decltype(i)>::value){
-                        std::cout<<"i: "<<i<<" is not an int\n";
-                    }
-                    if(!std::is_integral<decltype(j)>::value){
-                        std::cout<<"j: "<<j<<" is not an int\n";
-                    }
-                    if(!std::is_integral<decltype(k)>::value){
-                        std::cout<<"k: "<<k<<" is not an int\n";
-                    }
-                    if(!std::is_integral<decltype(val)>::value){
-                        std::cout<<"val: "<<val<<" is not an int\n";
-                    }
 
                     #pragma unroll
                     for (int r = 0; r < this->rank; ++r) {
