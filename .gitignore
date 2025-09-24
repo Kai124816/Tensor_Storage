@@ -36,6 +36,7 @@ test_*
 
 # ===== Build Directories =====
 /build/
+/helpful_info/
 /bin/
 /lib/
 /dist/
@@ -45,6 +46,12 @@ test_*
 
 # ===== Reference Code Directories =====
 /ref/
+
+# ===== Tensor directory =====
+/tensors/
+
+# ===== Directory with helper files =====
+/helpers/
 
 # ===== CMake =====
 CMakeCache.txt

@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <chrono>
 #include <omp.h>
 #include "tensor_impl.h"
 
@@ -39,7 +40,8 @@ protected:
     //Fills the partitions vector
     void set_partitions()
     {
-        int partition_size = this->nnz_entries/num_threads;
+        int partition_size;
+        if(num_threads > 0) partition_size = this->nnz_entries/num_threads;
         if(this->nnz_entries % num_threads != 0) partition_size++;
         int sum = 0;
 
@@ -234,24 +236,28 @@ protected:
     }
 
     //Create alto tensor with vector of non zero entries as input
-    void create_alto_vector(std::vector<NNZ_Entry<T>> tensor_vec)
+    void create_alto_vector(const std::vector<NNZ_Entry<T>>& tensor_vec)
     {
         alto_tensor.clear();
-    
-        for (int s = 0; s < tensor_vec.size(); s++) {
+        alto_tensor.resize(tensor_vec.size());
+
+        // Parallel fill
+        #pragma omp parallel for
+        for (int s = 0; s < static_cast<int>(tensor_vec.size()); s++) {
             T val = tensor_vec[s].value;
             ALTOEntry<T,S> entry;
-            entry.linear_index = translate_idx(tensor_vec[s].i, tensor_vec[s].j, tensor_vec[s].k);  // (row, col, depth)
+            entry.linear_index = translate_idx(tensor_vec[s].i, tensor_vec[s].j, tensor_vec[s].k);
             entry.value = val;
-            alto_tensor.push_back(entry);
+            alto_tensor[s] = entry;
         }
 
-        // Sort by linearized index
+        // Sort by linearized index (sequential)
         std::sort(alto_tensor.begin(), alto_tensor.end(),
                 [](const ALTOEntry<T,S>& a, const ALTOEntry<T,S>& b) {
                     return a.linear_index < b.linear_index;
                 });
     }
+
 
 public:
     //Initializer function with pointer array
@@ -344,7 +350,7 @@ public:
     }
 
     //MTTKRP algorithm in parallel
-    T** MTTKRP_Alto_Parallel(int mode) {
+    const T** MTTKRP_Alto_Parallel(int mode) {
         omp_set_num_threads(num_threads);  // <- set threads dynamically
         int shift = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
         int num_fibers = (mode == 1) ? this->cols * this->depth:

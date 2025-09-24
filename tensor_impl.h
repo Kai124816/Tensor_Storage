@@ -14,6 +14,8 @@
 #include <random>
 #include <type_traits>
 #include <iomanip>
+#include <chrono>
+#include <omp.h>
 #include "utils.h"
 
 
@@ -57,30 +59,39 @@ protected:
     }
 
     //Generates random matricies for factor matricies
-    void init_mode_matrix(T**& matrix, int rows, int cols) {
+    void init_mode_matrix(T**& matrix, int rows, int cols) 
+    {
         static_assert(std::is_arithmetic<T>::value, "T must be an arithmetic type.");
-    
+
+        // Allocate row pointers
         matrix = new T*[rows];
+
+        #pragma omp parallel for
         for (int i = 0; i < rows; ++i) {
             matrix[i] = new T[cols];
         }
-    
-        std::random_device rd;
-        std::mt19937 gen(rd());
-    
-        if constexpr (std::is_integral<T>::value) {
-            std::uniform_int_distribution<T> dist(0, 3);
-            for (int i = 0; i < rows; ++i)
-                for (int j = 0; j < cols; ++j)
-                    matrix[i][j] = dist(gen);
-        } else {
-            std::uniform_real_distribution<T> dist(0.0, 1.0);
-            for (int i = 0; i < rows; ++i)
-                for (int j = 0; j < cols; ++j)
-                    matrix[i][j] = dist(gen);
+
+        // Parallel initialization with thread-local RNGs
+        #pragma omp parallel
+        {
+            std::random_device rd;
+            std::mt19937 gen(rd() ^ omp_get_thread_num());  // unique seed per thread
+
+            if constexpr (std::is_integral<T>::value) {
+                std::uniform_int_distribution<T> dist(0, 3);
+                #pragma omp for
+                for (int i = 0; i < rows; ++i)
+                    for (int j = 0; j < cols; ++j)
+                        matrix[i][j] = dist(gen);
+            } else {
+                std::uniform_real_distribution<T> dist(0.0, 1.0);
+                #pragma omp for
+                for (int i = 0; i < rows; ++i)
+                    for (int j = 0; j < cols; ++j)
+                        matrix[i][j] = dist(gen);
+            }
         }
     }
-    
 
     //Function to delete matrixes
     void delete_matrix(T** matrix, int rows, int cols)
@@ -136,6 +147,11 @@ public:
     int get_rank() const
     {
         return rank;
+    }
+
+    int get_nnz() const
+    {
+        return nnz_entries;
     }
 
     //Destructor

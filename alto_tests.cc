@@ -346,8 +346,6 @@ void alto_mttkrp_paralell_file_input(const std::string &filename)
 
     const int R = 23344784, C = 23344784, D = 166;
 
-    float freq = 0.024f;
-
     std::vector<NNZ_Entry<int>> test_vec = read_tensor_file<int>(filename,99546551);
 
     if(test_vec.empty()) return;

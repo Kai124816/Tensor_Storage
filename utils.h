@@ -18,6 +18,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <omp.h>
 
 // ==========================
 // Constants
@@ -58,7 +59,7 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
     int block_size = 8, int max_blocks = 20000);
 
 template<typename T>
-void find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val);
+bool find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val);
 
 // --- MTTKRP ---
 template<typename T>
@@ -198,15 +199,13 @@ std::vector<NNZ_Entry<T>> read_tensor_file(const std::string &filename, size_t m
 }
 
 template<typename T>
-void find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val) {
+bool find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val) {
     for (size_t i = 0; i < entry_vec.size(); i++) {
         if (entry_vec[i].i == r && entry_vec[i].j == c && entry_vec[i].k == d && entry_vec[i].value == val) {
-            std::cout << "input exists in entry vec\n";
-            return;
+            return true;
         }
     }
-    std::cout << "input does not exist in entry vec\n";
-    std::cout << r << " " << c << " " << d << "\n";
+    return false;
 }
 
 // --- MTTKRP ---
@@ -252,12 +251,42 @@ int compare_matricies(T** m1, T** m2, int rows, int cols) {
     return 1;
 }
 
+bool compare_matricies_float(float** m1, float** m2, int rows, int cols, float epsilon = 1.0f) {
+    bool equal = true;  // shared flag
+
+    #pragma omp parallel for collapse(2) shared(equal)
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            if (!equal) continue;  // early exit if mismatch found
+            if (fabs(m1[i][j] - m2[i][j]) > epsilon * fabs(m1[i][j])) {
+                #pragma omp atomic write
+                equal = false;
+            }
+        }
+    }
+
+    return equal;
+}
+
 template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols) {
+int compare_matricies_id(T** m1, T** m2, int rows, int cols, std::ostream& out) {
     for (int i = 0; i < rows; i++)
         for (int j = 0; j < cols; j++)
-            if (m1[i][j] != m2[i][j])
-                std::cout << "values " << m1[i][j] << " and " << m2[i][j] << " dont match\n";
+        if (m1[i][j] != m2[i][j]) 
+                out << "values " << m1[i][j] << " and " << m2[i][j] << " at index " << 
+                i << " " << j << " " << "dont match\n";
+    return 1;
+}
+
+int compare_matricies_id_float(float** m1, float** m2, int rows, int cols, 
+std::ostream& out, float epsilon = 1.0) {
+    for (int i = 0; i < rows; i++){
+        for (int j = 0; j < cols; j++){
+            if (fabs(m1[i][j] - m2[i][j]) > 1e-3 * fabs(m1[i][j])) 
+                out << "values " << m1[i][j] << " and " << m2[i][j] << " at index " << 
+                i << " " << j << " " << "dont match\n";
+        }
+    }
     return 1;
 }
 
@@ -268,6 +297,13 @@ T* vectorize_matrix(T** m1, int rows, int cols) {
         for (int j = 0; j < cols; j++)
             ret_vector[i * cols + j] = m1[i][j];
     return ret_vector;
+}
+
+template<typename T>
+void copy_vector_to_matrix(T* &v1, T** &m1, int rows, int cols){
+    for(int i = 0; i < rows * cols; i++){
+        m1[i/rows][i % rows] = v1[i];
+    }
 }
 
 template<typename T>
