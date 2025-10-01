@@ -7,7 +7,7 @@
 #include <chrono>
 #include <omp.h> 
 #include <hip/hip_runtime.h>
-#include "alto_impl.h"
+#include "../ALTO/alto_impl.h"
 
 //======================================================================
 // BLCO_BLOCK_CPU: Represents one block of a BLCO tensor stored on CPU

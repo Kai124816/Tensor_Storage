@@ -1,6 +1,5 @@
-#include "utils.h"
-#include "tensor_impl.h"   
-#include "alto_impl.h"      
+#include "../utility/utils.h"
+#include "../ALTO/alto_impl.h"      
 
 void test_large_alto_tensor()
 {

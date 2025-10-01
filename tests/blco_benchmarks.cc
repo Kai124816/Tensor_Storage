@@ -1,8 +1,7 @@
-#include "utils.h"
-#include "tensor_impl.h"   
-#include "alto_impl.h"   
-#include "blco_impl.h"
-#include "gpu_functions.h"
+#include "../utility/utils.h"   
+#include "../ALTO/alto_impl.h"   
+#include "../BLCO/blco_impl.h"
+#include "../BLCO/gpu_functions.h"
 
 
 template<typename T, typename S>

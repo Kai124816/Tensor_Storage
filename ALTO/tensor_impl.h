@@ -16,7 +16,7 @@
 #include <iomanip>
 #include <chrono>
 #include <omp.h>
-#include "utils.h"
+#include "../utility/utils.h"
 
 
 //======================================================================
