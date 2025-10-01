@@ -54,12 +54,15 @@ Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt
 ## Useful Papers
 
 Useful introduction to tensors: https://www.kolda.net/publication/TensorReview.pdf
+
 Paper on ALTO tensor storage: https://arxiv.org/abs/2102.10245
+
 Paper on BLCO tensor storage: https://arxiv.org/abs/2201.12523
 
 
 
  
+
 
 
 
