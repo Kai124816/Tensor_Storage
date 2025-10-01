@@ -51,9 +51,16 @@ ex: ./test_blco tensor_file.txt 1000 50 60 70 2
 Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt 
 ./build/test_blco tensors/nell-2.tns 76879419 12092 9184 28818 2 float
 
+## Useful Papers
+
+Useful introduction to tensors: https://www.kolda.net/publication/TensorReview.pdf
+Paper on ALTO tensor storage: https://arxiv.org/abs/2102.10245
+Paper on BLCO tensor storage: https://arxiv.org/abs/2201.12523
+
 
 
  
+
 
 
 
