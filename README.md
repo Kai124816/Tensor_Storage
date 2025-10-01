@@ -1,6 +1,6 @@
 ## Tensor_Storage
 
-Tensor_Storage is a high-performance C++ library designed for efficient storage and manipulation of three dimensional(for now) tensors. It supports various tensor formats and provides parallelized implementations of the Matricized Tensor Times Khatri-Rao Product (MTTKRP) operation on both CPU and AMD GPU architectures.
+Tensor_Storage is a high-performance C++ library designed for efficient storage and manipulation of three dimensional (for now) tensors. It supports various tensor formats and provides parallelized implementations of the Matricized Tensor Times Khatri-Rao Product (MTTKRP) operation on both CPU and AMD GPU architectures.
 
 ## Features
 
@@ -54,5 +54,6 @@ Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt
 
 
  
+
 
 
