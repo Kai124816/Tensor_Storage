@@ -47,11 +47,11 @@ test_*
 # ===== Reference Code Directories =====
 /ref/
 
-# ===== Tensor directory =====
-/tensors/
-
 # ===== Directory with helper files =====
-/helpers/
+/helper_code/
+
+# ===== Directory with output files =====
+/output/
 
 # ===== CMake =====
 CMakeCache.txt
@@ -79,9 +79,6 @@ cmake-build-*/
 # ===== OS-Specific Files =====
 .DS_Store
 Thumbs.db
-
-# ===== Text files =====
-*.txt
 
 # ===== tns files =====
 *.tns

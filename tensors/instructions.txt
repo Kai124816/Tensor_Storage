@@ -1,0 +1,10 @@
+1. Use wget and the URL of the tensor you want to test. This should return a .gz file
+2. Use gunzip to unzip the .gz file.
+3. Compile the clean_tns.cc file using the command g++ -std=c++17 -O2 -o clean_tns clean_tns.cc
+4. Use the object file to clean out the tensor: (Ex)./clean_tns amazon-reviews.tns 
+5. Use the command wc -l tensor.tns to see if the number of non zeros was modified
+6. Run your program
+7. Remove the tensor file to save space
+
+Note: you can use the head -n 100 to read the first 100 lines of the file and to check what data
+type the file is

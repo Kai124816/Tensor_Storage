@@ -5,6 +5,7 @@
 #include "gpu_functions.h"
 
 
+
 //Generates a random BLCO tensor based on your parameters and tests encoding
 void test_blco_tensor(int nnz, int rows, int cols, int depth)
 {

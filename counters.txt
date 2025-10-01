@@ -1,0 +1,16 @@
+# Group 1 – Wavefronts, VALUInsts, SALUInsts, SFetchInsts
+pmc : Wavefronts VALUInsts SALUInsts SFetchInsts
+
+# Group 2 – FlatVMemInsts, LDSInsts, FlatLDSInsts
+pmc : FlatVMemInsts LDSInsts FlatLDSInsts
+
+# Group 3 – WriteSize, L2CacheHit, GDSInsts, VALUUtilization
+pmc : WriteSize L2CacheHit GDSInsts VALUUtilization
+
+# Group 4 – FetchSize (alone, because only 1 metric left)
+pmc : FetchSize
+
+# Optional filters
+gpu: 0
+kernel: mttkrp_kernel_1
+range: 0:

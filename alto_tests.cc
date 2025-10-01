@@ -376,8 +376,6 @@ void alto_mttkrp_paralell_file_input(const std::string &filename)
 }
 
 
-
-
 int main() {
     alto_mttkrp_paralell_file_input("fb-m.tns");
     return 0;
