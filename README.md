@@ -42,10 +42,10 @@ other options:
 -g: Generate debug symbbols which is useful for gdb or hip-gdb
 -02: If 03 is too aggressive
 
-Test Tensor Construction (ex): ./test_blco non-zero rows cols depth 
+Test Tensor Construction: ./test_blco non-zero rows cols depth 
 ex: ./test_blco 1000 50 60 70
 
-Test MTTKRP (ex): ./test_blco tensor non-zero rows cols depth mode
+Test MTTKRP: ./test_blco tensor non-zero rows cols depth mode
 ex: ./test_blco tensor_file.txt 1000 50 60 70 2
 
 Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt 
@@ -62,6 +62,7 @@ Paper on BLCO tensor storage: https://arxiv.org/abs/2201.12523
 
 
  
+
 
 
 
