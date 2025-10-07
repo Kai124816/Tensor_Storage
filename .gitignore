@@ -83,5 +83,8 @@ Thumbs.db
 # ===== tns files =====
 *.tns
 
+# ===== binary tensors =====
+*.bin
+
 
 

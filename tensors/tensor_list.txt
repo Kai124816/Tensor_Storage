@@ -1,7 +1,3 @@
-Small Tensor: No link (Already in repo)
-Dimensions: 400 x 400 x 10, Non zeros: 300
-Compilation Instructions: ./test_blco small_tensor.txt 400 400 40 300 1 int
-
 Amazon Tensor: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/amazon/amazon-reviews.tns.gz
 Dimensions: 4821207 x 1774269 x 1805187, Non zeros: 1741809018
 Compilation Instructions: N/A
@@ -9,22 +5,22 @@ Passed: No
 
 Darpa: https://frostt-tensors.s3.us-east-2.amazonaws.com/1998DARPA/1998darpa.tns.gz
 Dimensions: 22476 x 22476 x 23776223, Non zeros: 28436033
-Compilation Instructions: ./build/test_blco darpa.tns 28436033 22476 22476 23776223 1 int
+Compilation Instructions (example): ./test_blco ../tensors/darpa.bin 28436033 22476 22476 23776223 1 int
 Passed: Yes
 
 Freebase Music: https://frostt-tensors.s3.us-east-2.amazonaws.com/FB-M/fb-m.tns.gz
 Dimensions: 23344784 x 23344784 x 166, Non zeros: 99546551
-Compilation Instructions: ./build/test_blco tensors/freebase_music.tns 99546550 23344784 23344784 166 1 int
+Compilation Instructions (example): ./test_blco ../tensors/fbm.bin 99546550 23344784 23344784 166 1 int
 Passed: Yes
 
 NELL-1: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-1.tns.gz
 Dimensions: 2902330 x 2143368 x 25495389, Non zeros: 143599552
-Compilation Instructions: ./build/test_blco tensors/nell-1.tns 143599552 2902330 2143368 25495389 1 float
+Compilation Instructions (example): ./test_blco ../tensors/nell-1.bin 143599552 2902330 2143368 25495389 1 float
 Passed: Yes
 
 NELL-2: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-2.tns.gz
 Dimensions: 12092 x 9184 x 28818, Non zeros: 76879419
-Compilation Instructions: ./build/test_blco tensors/nell-2.tns 76879419 12092 9184 28818 1 float
+Compilation Instructions (example): ./test_blco ../tensors/nell-2.bin 76879419 12092 9184 28818 1 float
 Passed: Yes
 
 Patents: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/patents/patents.tns.gz 

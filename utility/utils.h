@@ -41,6 +41,14 @@ struct NNZ_Entry {
     T value;    // nonzero value at (i, j, k)
 };
 
+//Represents the header of a binary tensor file
+struct TensorHeader {
+    int32_t rows;
+    int32_t cols;
+    int32_t depth;
+    int64_t nnz;
+};
+
 // ==========================
 // Forward Declarations
 // ==========================
@@ -135,8 +143,9 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
         throw std::invalid_argument("Invalid value range.");
 
     // Compute target number of nonzeros
-    __uint128_t total_entries = static_cast<__uint128_t>(rows) * cols * depth;
-    uint64_t target_nnz = static_cast<uint64_t>(total_entries * density);
+    std::cout<<"rows: "<<rows<<" cols: "<<cols<<" depth: "<<depth<<" density: "<<density<<"\n";
+    uint64_t total_entries = static_cast<uint64_t>(rows) * cols * depth;
+    double target_nnz = static_cast<double>(total_entries) * density;
 
     std::vector<NNZ_Entry<T>> entries;
     entries.reserve(target_nnz);
@@ -219,6 +228,45 @@ std::vector<NNZ_Entry<T>> read_tensor_file(const std::string &filename, size_t m
     return entries;
 }
 
+// Read a tensor from a binary file (1-indexed format).
+// Each line: i j k value
+// Converts to 0-indexed internally.
+template<typename T>
+std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, size_t maxEntries = 0) 
+{
+    std::ifstream file(filename, std::ios::binary);
+    std::vector<NNZ_Entry<T>> entries;
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return entries;
+    }
+
+    // Read header
+    TensorHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(header));
+
+    size_t toRead = (maxEntries > 0) ? std::min<size_t>(header.nnz, maxEntries) 
+                                     : header.nnz;
+
+    entries.resize(toRead);
+
+    // Read entries directly into vector
+    file.read(reinterpret_cast<char*>(entries.data()), toRead * sizeof(NNZ_Entry<T>));
+
+    if (!file) {
+        std::cerr << "Error: Only read " << file.gcount() << " bytes from " << filename << "\n";
+    }
+
+    for (auto &e : entries) {
+        e.i -= 1;
+        e.j -= 1;
+        e.k -= 1;
+    }
+
+    return entries;
+}
+
 // Return true if a given entry exists in the tensor.
 template<typename T>
 bool find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val) {
@@ -242,7 +290,9 @@ template<typename T>
 T** MTTKRP(int mode, T** M, T** A, T** B, int R,
            const std::vector<NNZ_Entry<T>>& entries) 
 {
+    int count = 0;
     for (const auto& entry : entries) {
+        count++;
         for (int r = 0; r < R; ++r) {
             T contrib = 0;
             if (mode == 1) {

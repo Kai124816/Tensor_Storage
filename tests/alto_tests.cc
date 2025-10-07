@@ -1,24 +1,22 @@
 #include "../utility/utils.h"
 #include "../ALTO/alto_impl.h"      
 
-void test_large_alto_tensor()
+//Generates a random BLCO tensor based on your parameters and tests encoding 
+void test_alto_tensor(int nnz, int rows, int cols, int depth)
 {
-    std::cout << "Testing large ALTO tensor\n";
+    std::cout << "Testing ALTO tensor\n";
+    std::cout << "Tensor info: "<< rows << " x " << cols << 
+    " x " << depth << ", " << nnz << " non zero entries\n";
     std::cout << "\n";
+    
+    double total_entries = static_cast<double>(rows) * cols * depth;
+    double freq = static_cast<double>(nnz) / total_entries;
 
-    const int R = 4000000, C = 8500000, D = 10;
+    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(rows,cols,depth,freq,0,100);
 
-    float freq = 0.00000000000007f;
+    Alto_Tensor_3D<int,__uint128_t> alto(test_vec, rows, cols, depth);
 
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    std::cout<<"Entries:"<<"\n";
-    print_entry_vec(test_vec);
-    std::cout<<"\n";
-
-    Alto_Tensor_3D<int,__uint128_t> alto(test_vec, R, C, D);
-
-    int bits_printed = 50;
+    int bits_printed = ceiling_log2(rows) + ceiling_log2(cols) + ceiling_log2(depth);
 
     std::cout << "ALTO bitmasks:\n";
     for (const auto& a : alto.get_modemasks()) {
@@ -26,347 +24,79 @@ void test_large_alto_tensor()
     }
     std::cout << "\n";
 
-    std::vector<ALTOEntry<int,__uint128_t>> tensor = alto.get_alto();
+    const std::vector<ALTOEntry<int,__uint128_t>> alto_indexes = alto.get_alto();
 
-    std::cout << "ALTO entries:\n";
-    for (const auto& e : tensor) {
-        std::cout << "Linear Index: ";
-        print_lsb_bits(e.linear_index, bits_printed);
-        std::cout << "Value: " << e.value << std::endl;
+    int not_found = 0;
+    for(int i = 0; i < alto_indexes.size(); i++){
+        int row_ind = alto.get_mode_idx(alto_indexes[i].linear_index,1);
+        int col_ind = alto.get_mode_idx(alto_indexes[i].linear_index,2);
+        int depth_ind = alto.get_mode_idx(alto_indexes[i].linear_index,3);
+        int val = alto_indexes[i].value;
+        if(!find_entry(test_vec, row_ind, col_ind, depth_ind, val)) not_found++;
     }
-    std::cout << "\n";
-
-    for(int i = 0; i<tensor.size(); i++){
-        int row_ind = alto.get_mode_idx(tensor[i].linear_index,1);
-        int col_ind = alto.get_mode_idx(tensor[i].linear_index,2);
-        int depth_ind = alto.get_mode_idx(tensor[i].linear_index,3);
-        int val = tensor[i].value;
-        find_entry(test_vec, row_ind, col_ind, depth_ind, val);
+    
+    if(not_found == 0){
+        std::cout << "Tests Passed\n";
     }
-    std::cout << "\n";
-
-    std::cout << "Tests finished!\n";
+    else{
+        std::cout << "Tests Failed, " << not_found << " entries out of " << nnz << " where not found\n";
+    }
 }
 
-void alto_mttkrp()
+//Tests and times MTTKRP using BLCO tensor 
+template<typename T, typename S>
+void mttkrp_on_tensor(const std::string &filename, int nnz, int rows, int cols, int depth, int mode)
 {
-    std::cout << "Testing ALTO MTTKRP\n";
+    std::cout << "Testing MTTKRP using ALTO Tensor\n";
+    std::cout << "Tensor info: "<< rows << " x " << cols << 
+    " x " << depth << ", " << nnz << " non zero entries\n";
     std::cout << "\n";
 
-    const int R = 100, C = 250, D = 75;
+    int dims[3] = {rows, cols, depth};
 
-    float freq = 0.000052f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    std::cout<<"Entries:"<<"\n";
-    print_entry_vec(test_vec);
-    std::cout<<"\n";
-
-    Alto_Tensor_3D<int,__uint128_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 3 factor matrix before MTTKRP:"<<"\n";
-
-    int** input_matrix = alto.get_fmats()[2];
-
-    print_matrix(input_matrix, D, alto.get_rank());
-
-    std::cout<<"\n";
-
-    std::cout<<"Mode 3 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto(3);
-
-    print_matrix(output_matrix, D, alto.get_rank());
-}
-
-//Testing Paralell alto with less than 4 non-zeros per fiber
-void alto_mttkrp_paralell_1()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - less than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 100, C = 250, D = 75;
-
-    float freq = 0.000052f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 3 factor matrix before MTTKRP:"<<"\n";
-
-    int** input_matrix = alto.get_fmats()[2];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,D,alto.get_rank());
-
-    print_matrix(input_matrix, D, alto.get_rank());
-
-    std::cout<<"\n";
-
-    std::cout<<"Mode 3 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(3);
-
-    print_matrix(output_matrix, D, alto.get_rank());
-
-    int** test_matrix = MTTKRP(3,copy_input_matrix,alto.get_fmats()[0],alto.get_fmats()[1],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,D,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-    std::cout<<"\n";
-
-    for(int i = 0; i < D; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-
-//Testing Paralell alto with more than 4 non-zeros per fiber
-void alto_mttkrp_paralell_2()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - less than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 100, C = 250, D = 75;
-
-    float freq = 0.000052f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 2 factor matrix before MTTKRP:"<<"\n";
-
-    int** input_matrix = alto.get_fmats()[1];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,C,alto.get_rank());
-
-    print_matrix(input_matrix, C, alto.get_rank());
-    std::cout<<"\n";
-
-    std::cout<<"Mode 2 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(2);
-
-    print_matrix(output_matrix, C, alto.get_rank());
-    std::cout<<"\n";
-
-    int** test_matrix = MTTKRP(2,copy_input_matrix,alto.get_fmats()[0],alto.get_fmats()[2],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,C,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-
-    for(int i = 0; i < C; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-//Testing Paralell alto with more than 4 non-zeros per fiber
-void alto_mttkrp_paralell_3()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - less than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 100, C = 250, D = 75;
-
-    float freq = 0.000052f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 1 factor matrix before MTTKRP:"<<"\n";
-
-    int** input_matrix = alto.get_fmats()[0];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,R,alto.get_rank());
-
-    print_matrix(input_matrix, R, alto.get_rank());
-    std::cout<<"\n";
-
-    std::cout<<"Mode 1 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(1);
-
-    print_matrix(output_matrix, R, alto.get_rank());
-    std::cout<<"\n";
-
-    int** test_matrix = MTTKRP(1,copy_input_matrix,alto.get_fmats()[1],alto.get_fmats()[2],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,R,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-
-    for(int i = 0; i < R; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-//Testing Paralell alto with more than 4 non-zeros per fiber
-void alto_mttkrp_paralell_4()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - more than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 100, C = 75, D = 250;
-
-    float freq = 0.024f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 3 factor matrix before MTTKRP:"<<"\n";
-
-    std::vector<int**> fmats = alto.get_fmats();
-    int** input_matrix = fmats[2];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,D,alto.get_rank());
-
-    print_matrix(input_matrix, D, alto.get_rank());
-    std::cout<<"\n";
-
-    std::cout<<"Mode 3 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(3);
-
-    print_matrix(output_matrix, D, alto.get_rank());
-    std::cout<<"\n";
-
-    int** test_matrix = MTTKRP(3,copy_input_matrix,alto.get_fmats()[0],alto.get_fmats()[1],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,D,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-
-    for(int i = 0; i < D; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-//Testing Paralell alto with more than 4 non-zeros per fiber
-void alto_mttkrp_paralell_5()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - more than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 100, C = 250, D = 75;
-
-    float freq = 0.024f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 2 factor matrix before MTTKRP:"<<"\n";
-
-    std::vector<int**> fmats = alto.get_fmats();
-    int** input_matrix = fmats[1];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,C,alto.get_rank());
-
-    print_matrix(input_matrix, C, alto.get_rank());
-    std::cout<<"\n";
-
-    std::cout<<"Mode 2 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(2);
-
-    print_matrix(output_matrix, C, alto.get_rank());
-    std::cout<<"\n";
-
-    int** test_matrix = MTTKRP(2,copy_input_matrix,alto.get_fmats()[0],alto.get_fmats()[2],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,C,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-
-    for(int i = 0; i < C; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-//Testing Paralell alto with more than 4 non-zeros per fiber
-void alto_mttkrp_paralell_6()
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - more than 4 non-zero entries per fiber\n";
-    std::cout << "\n";
-
-    const int R = 250, C = 100, D = 75;
-
-    float freq = 0.024f;
-
-    std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(R,C,D,freq,0,100);
-
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
-
-    std::cout<<"Mode 1 factor matrix before MTTKRP:"<<"\n";
-
-    std::vector<int**> fmats = alto.get_fmats();
-    int** input_matrix = fmats[0];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,R,alto.get_rank());
-
-    print_matrix(input_matrix, R, alto.get_rank());
-    std::cout<<"\n";
-
-    std::cout<<"Mode 1 factor matrix after MTTKRP:"<<"\n";
-
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(1);
-
-    print_matrix(output_matrix, R, alto.get_rank());
-    std::cout<<"\n";
-
-    int** test_matrix = MTTKRP(1,copy_input_matrix,alto.get_fmats()[1],alto.get_fmats()[2],alto.get_rank(),test_vec);
-
-    if(compare_matricies(output_matrix,test_matrix,R,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
-
-    for(int i = 0; i < R; i++){
-        delete[] copy_input_matrix[i];
-    }
-    delete[] copy_input_matrix;
-
-    std::cout<<"\n";
-}
-
-//MTTKRP with a real life tensor from a tns file
-void alto_mttkrp_paralell_file_input(const std::string &filename)
-{
-    std::cout << "Testing ALTO MTTKRP Paralell version - with a Tensor file\n";
-    std::cout << "\n";
-
-    const int R = 23344784, C = 23344784, D = 166;
-
-    std::vector<NNZ_Entry<int>> test_vec = read_tensor_file<int>(filename,99546551);
+    std::vector<NNZ_Entry<T>> test_vec = read_tensor_file_binary<T>(filename);
 
     if(test_vec.empty()) return;
 
-    std::cout<<"constructing tensor\n";
+    std::cout << "Constructing Tensor:\n";
+    std::cout<<"\n";
+    Alto_Tensor_3D<T,S> alto(test_vec, rows, cols, depth);
 
-    Alto_Tensor_3D<int,uint64_t> alto(test_vec, R, C, D);
+    std::vector<T**> fmats = alto.get_fmats();
+    T** input_matrix = fmats[mode - 1];
+    T** copy_input_matrix = create_and_copy_matrix(input_matrix,dims[mode - 1],alto.get_rank());
 
-    std::vector<int**> fmats = alto.get_fmats();
-    int** input_matrix = fmats[0];
-    int** copy_input_matrix = create_and_copy_matrix(input_matrix,R,alto.get_rank());
+    std::cout<<"Conducting MTTKRP:"<<"\n\n";
 
-    std::cout<<"Performing MTTKRP algorithm in parallel\n";
-    int** output_matrix = alto.MTTKRP_Alto_Parallel(1);
+    auto start = std::chrono::high_resolution_clock::now();
+    T** output_matrix = alto.MTTKRP_Alto_Parallel(mode);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    std::cout << "Elapsed time for MTTKRP: " << duration << " ms\n\n";
 
-    int** test_matrix = MTTKRP(1,copy_input_matrix,alto.get_fmats()[1],alto.get_fmats()[2],alto.get_rank(),test_vec);
+    int nt_modes1[3] = {2, 1, 1};
+    int nt_modes2[3] = {3, 3, 2};
 
-    std::cout<<"Comparing output to test matrix\n";
-    if(compare_matricies(output_matrix,test_matrix,R,alto.get_rank())) std::cout<<"Test Passed!"<<"\n";
-    else std::cout<<"Test Failed!"<<"\n";
+    T** test_matrix = MTTKRP(mode,copy_input_matrix,fmats[nt_modes1[mode-1] - 1],fmats[nt_modes2[mode-1] - 1],alto.get_rank(),test_vec);
 
-    for(int i = 0; i < R; i++){
+    bool test_passed;
+    if constexpr (std::is_floating_point<T>::value){
+        test_passed = compare_matricies_float(output_matrix,test_matrix,dims[mode-1],alto.get_rank());
+    }
+    else test_passed = compare_matricies<T>(output_matrix,test_matrix,dims[mode-1],alto.get_rank());
+
+    std::cout<<"comparing matrices\n\n";
+    if(test_passed) std::cout<<"Test Passed!"<<"\n";
+    else{
+        std::cout<<"Test Failed! Check mismatch_log.txt for more info"<<"\n";
+        std::ofstream logfile("mismatch_log.txt");
+        if constexpr (std::is_floating_point<T>::value){
+            compare_matricies_id_float(output_matrix,test_matrix,dims[mode-1],alto.get_rank(),logfile);
+        }
+        else compare_matricies_id<T>(output_matrix,test_matrix,dims[mode-1],alto.get_rank(),logfile);
+    }
+    
+    for(int i = 0; i < dims[mode-1]; i++){
         delete[] copy_input_matrix[i];
     }
     delete[] copy_input_matrix;
@@ -375,7 +105,50 @@ void alto_mttkrp_paralell_file_input(const std::string &filename)
 }
 
 
-int main() {
-    alto_mttkrp_paralell_file_input("fb-m.tns");
+int main(int argc, char* argv[]) {
+    if (argc != 8 && argc != 5) {
+        std::cerr << "Usage: " << argv[0] 
+                  << " <filename> <nnz> <rows> <cols> <depth> <mode> <Type>\n"
+                  << "or <nnz> <rows> <cols> <depth>\n";
+        return 1;
+    }
+    else if(argc == 8){
+        std::string filename = argv[1];
+        int nnz   = std::stoi(argv[2]);
+        int rows  = std::stoi(argv[3]);
+        int cols  = std::stoi(argv[4]);
+        int depth = std::stoi(argv[5]);
+        int mode  = std::stoi(argv[6]);
+
+        if(ceiling_log2(rows) + ceiling_log2(cols) + ceiling_log2(depth) < 64){
+            if(std::string(argv[7]) == "int") mttkrp_on_tensor<int,uint64_t>(filename, nnz, rows, cols, depth, mode);
+            else if(std::string(argv[7]) == "float") mttkrp_on_tensor<float,uint64_t>(filename, nnz, rows, cols, depth, mode);
+            else if(std::string(argv[7]) == "unsigned long long int") mttkrp_on_tensor<unsigned long long int,uint64_t>(filename, nnz, rows, cols, depth, mode);
+            else{ 
+                std::cerr << "Unsupported type. The supported types are int, \
+                float, long int, and long long int\n";
+                return 1;
+            }
+        }
+        else{
+            if(std::string(argv[7]) == "int") mttkrp_on_tensor<int,__uint128_t>(filename, nnz, rows, cols, depth, mode);
+            else if(std::string(argv[7]) == "float") mttkrp_on_tensor<float,__uint128_t>(filename, nnz, rows, cols, depth, mode);
+            else if(std::string(argv[7]) == "unsigned long long int") mttkrp_on_tensor<unsigned long long int,__uint128_t>(filename, nnz, rows, cols, depth, mode);
+            else{ 
+                std::cerr << "Unsupported type. The supported types are int, \
+                float, long int, and long long int\n";
+                return 1;
+            }
+        }
+    }
+    else{
+        int nnz = std::stoi(argv[1]);
+        int rows = std::stoi(argv[2]);
+        int cols = std::stoi(argv[3]);
+        int depth = std::stoi(argv[4]);
+
+        test_alto_tensor(nnz, rows, cols, depth);
+    }
+
     return 0;
-};
+}

@@ -351,7 +351,7 @@ public:
     //   - If fibers overlap across blocks → atomics
     //   - Else use private accumulation per thread then merge
     //------------------------------------------------------------------
-    const T** MTTKRP_Alto_Parallel(int mode) {
+    T** MTTKRP_Alto_Parallel(int mode) {
         omp_set_num_threads(num_threads);
         int shift = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
 

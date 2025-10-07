@@ -7,7 +7,9 @@
 //Generates a random BLCO tensor based on your parameters and tests encoding
 void test_blco_tensor(int nnz, int rows, int cols, int depth)
 {
-    std::cout << "Testing large BLCO tensor\n";
+    std::cout << "Testing BLCO tensor\n";
+    std::cout << "Tensor info: "<< rows << " x " << cols << 
+    " x " << depth << ", " << nnz << " non zero entries\n";
     std::cout << "\n";
 
     float freq = nnz / (rows * cols * depth);
@@ -15,13 +17,9 @@ void test_blco_tensor(int nnz, int rows, int cols, int depth)
 
     std::vector<NNZ_Entry<int>> test_vec = generate_block_sparse_tensor(rows,cols,depth,freq,0,100);
 
-    std::cout<<"Entries:"<<"\n";
-    print_entry_vec(test_vec);
-    std::cout<<"\n";
-
     BLCO_Tensor_3D<int,__uint128_t> blco(test_vec, rows, cols, depth);
 
-    int bits_printed = 64;
+    int bits_printed = ceiling_log2(rows) + ceiling_log2(cols) + ceiling_log2(depth);
 
     std::cout << "BLCO bitmasks:\n";
     for (const auto& a : blco.get_blco_masks()) {
@@ -73,7 +71,7 @@ void mttkrp_on_tensor(const std::string &filename, int nnz, int rows, int cols, 
 
     int dims[3] = {rows, cols, depth};
 
-    std::vector<NNZ_Entry<T>> test_vec = read_tensor_file<T>(filename,nnz);
+    std::vector<NNZ_Entry<T>> test_vec = read_tensor_file_binary<T>(filename);
 
     if(test_vec.empty()) return;
 
