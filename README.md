@@ -27,7 +27,26 @@ ex() ./download_and_convert.sh https://frostt-tensors.s3.us-east-2.amazonaws.com
 Note: you can use the head -n 100 to read the first 100 lines of the file and to check what data
 type the file is
 
-## Compilation and Execution
+## Compilation and Execution (ALTO)
+
+Default compilation Instruction to test ALTO tensor: hipcc -std=c++17 -O3 -fopenmp alto_tests.cc -o test_alto
+
+other options:
+-Wall: For extra warnings
+-Wextra: Also for extra warnings
+-g: Generate debug symbbols which is useful for gdb or hip-gdb
+-02: If 03 is too aggressive
+
+Test Tensor Construction: ./test_blco non-zero rows cols depth 
+ex: ./test_alto 1000 50 60 70
+
+Test MTTKRP: ./test_blco tensor non-zero rows cols depth mode
+ex: ./test_alto ../tensors/darpa.bin 1000 50 60 70 1 int
+
+Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt 
+./test_alto ../tensors/nell-2.bin 76879419 12092 9184 28818 1 float
+
+## Compilation and Execution (BLCO)
 
 Default compilation Instruction to test BLCO tensor: hipcc -std=c++17 -O3 -fopenmp blco_tests.cc -o test_blco
 
@@ -48,24 +67,6 @@ ex: ./test_blco ../tensors/darpa.bin 1000 50 60 70 1 int
 Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt 
 ./build/test_blco ../tensors/nell-2.bin 76879419 12092 9184 28818 1 float
 
-
-Default compilation Instruction to test ALTO tensor: hipcc -std=c++17 -O3 -fopenmp alto_tests.cc -o test_alto
-
-other options:
--Wall: For extra warnings
--Wextra: Also for extra warnings
--g: Generate debug symbbols which is useful for gdb or hip-gdb
--02: If 03 is too aggressive
-
-Test Tensor Construction: ./test_blco non-zero rows cols depth 
-ex: ./test_alto 1000 50 60 70
-
-Test MTTKRP: ./test_blco tensor non-zero rows cols depth mode
-ex: ./test_alto ../tensors/darpa.bin 1000 50 60 70 1 int
-
-Test MTTKRP with HIP stats (ex): rocprof --stats -i counters.txt 
-./test_alto ../tensors/nell-2.bin 76879419 12092 9184 28818 1 float
-
 ## Useful Papers
 
 Useful introduction to tensors: https://www.kolda.net/publication/TensorReview.pdf
@@ -77,6 +78,7 @@ Paper on BLCO tensor storage: https://arxiv.org/abs/2201.12523
 
 
  
+
 
 
 
