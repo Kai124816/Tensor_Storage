@@ -1,49 +1,50 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
-#include <limits>
+#include <vector>
 #include <string>
+#include <algorithm>
+#include <sstream>
 
 // =====================
-// Tensor Structures
+// N-Dimensional Structures
 // =====================
-template <typename T>
-struct TensorEntry {
-    int32_t i, j, k;  // coordinates
-    T val;            // value (templated)
-};
 
-struct TensorHeader {
-    int32_t rows;
-    int32_t cols;
-    int32_t depth;
-    int64_t nnz;
-};
+/**
+ * For binary storage, we write:
+ * 1. int32_t rank
+ * 2. int32_t dimensions[rank]
+ * 3. int64_t nnz
+ * 4. Data blocks: [coord_0, coord_1, ..., coord_N-1, value]
+ */
 
 // =====================
 // Converter Function
 // =====================
 template <typename T>
-void convertTxtToBin(const std::string &inputFile, const std::string &outputFile) {
+void convertTxtToBin(const std::string &inputFile, const std::string &outputFile, int rank) {
+    if (rank <= 0) {
+        throw std::invalid_argument("Rank must be a positive integer.");
+    }
+
     std::ifstream fin(inputFile);
     if (!fin.is_open()) {
         throw std::runtime_error("Error: could not open input file " + inputFile);
     }
 
-    std::ofstream fout(outputFile, std::ios::binary);
-    if (!fout.is_open()) {
-        throw std::runtime_error("Error: could not open output file " + outputFile);
-    }
-
-    // First pass: find max indices and nnz
-    int32_t max_i = 0, max_j = 0, max_k = 0;
+    // First pass: find max indices for each dimension and count nnz
+    std::vector<int32_t> max_indices(rank, 0);
     int64_t nnz = 0;
-    TensorEntry<T> entry;
-
-    while (fin >> entry.i >> entry.j >> entry.k >> entry.val) {
-        max_i = std::max(max_i, entry.i);
-        max_j = std::max(max_j, entry.j);
-        max_k = std::max(max_k, entry.k);
+    
+    std::string line;
+    while (std::getline(fin, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        int32_t coord;
+        for (int d = 0; d < rank; ++d) {
+            if (!(ss >> coord)) break;
+            max_indices[d] = std::max(max_indices[d], coord);
+        }
         nnz++;
     }
 
@@ -51,54 +52,72 @@ void convertTxtToBin(const std::string &inputFile, const std::string &outputFile
     fin.clear();
     fin.seekg(0, std::ios::beg);
 
-    // Write header
-    TensorHeader header;
-    header.rows  = max_i + 1;  // assuming 0-based indexing
-    header.cols  = max_j + 1;
-    header.depth = max_k + 1;
-    header.nnz   = nnz;
+    std::ofstream fout(outputFile, std::ios::binary);
+    if (!fout.is_open()) {
+        throw std::runtime_error("Error: could not open output file " + outputFile);
+    }
 
-    fout.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    // --- Write Header ---
+    // 1. Rank
+    fout.write(reinterpret_cast<const char*>(&rank), sizeof(int32_t));
+    // 2. Dimensions (assuming 0-indexed input, so size = max_index + 1)
+    for (int d = 0; d < rank; ++d) {
+        int32_t dim_size = max_indices[d] + 1;
+        fout.write(reinterpret_cast<const char*>(&dim_size), sizeof(int32_t));
+    }
+    // 3. NNZ
+    fout.write(reinterpret_cast<const char*>(&nnz), sizeof(int64_t));
 
-    // Write entries
-    while (fin >> entry.i >> entry.j >> entry.k >> entry.val) {
-        fout.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
+    // --- Write Entries ---
+    std::vector<int32_t> coords(rank);
+    T value;
+    while (std::getline(fin, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        
+        // Read coordinates
+        for (int d = 0; d < rank; ++d) {
+            ss >> coords[d];
+        }
+        // Read value
+        ss >> value;
+
+        // Write coordinates and value to binary
+        fout.write(reinterpret_cast<const char*>(coords.data()), rank * sizeof(int32_t));
+        fout.write(reinterpret_cast<const char*>(&value), sizeof(T));
     }
 
     fin.close();
     fout.close();
 
-    std::cout << "Converted " << nnz << " entries to binary file " << outputFile << "\n";
-    std::cout << "Tensor dimensions: "
-              << header.rows << " x "
-              << header.cols << " x "
-              << header.depth << "\n";
+    std::cout << "Successfully converted " << nnz << " entries (Rank " << rank << ") to " << outputFile << "\n";
 }
 
 // =====================
 // Main with type switch
 // =====================
 int main(int argc, char* argv[]) {
-    if (argc < 4) {
+    if (argc < 5) {
         std::cerr << "Usage: " << argv[0]
-                  << " input.txt output.bin [int|float|double]\n";
+                  << " <input.txt> <output.bin> <rank> <int|float|double>\n"
+                  << "Example: " << argv[0] << " data.txt data.bin 4 float\n";
         return 1;
     }
 
     std::string inputFile  = argv[1];
     std::string outputFile = argv[2];
-    std::string type       = argv[3];
+    int rank               = std::stoi(argv[3]);
+    std::string type       = argv[4];
 
     try {
         if (type == "int") {
-            convertTxtToBin<int>(inputFile, outputFile);
+            convertTxtToBin<int>(inputFile, outputFile, rank);
         } else if (type == "float") {
-            convertTxtToBin<float>(inputFile, outputFile);
+            convertTxtToBin<float>(inputFile, outputFile, rank);
         } else if (type == "double") {
-            convertTxtToBin<double>(inputFile, outputFile);
+            convertTxtToBin<double>(inputFile, outputFile, rank);
         } else {
-            throw std::runtime_error("Unsupported type: " + type +
-                                     ". Use int, float, or double.");
+            throw std::runtime_error("Unsupported type: " + type);
         }
     } catch (const std::exception &e) {
         std::cerr << "Conversion failed: " << e.what() << "\n";

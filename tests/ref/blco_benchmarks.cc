@@ -7,21 +7,22 @@
 template<typename T, typename S>
 void mttkrp_benchmark(const std::string &filename, int nnz, int rows, int cols, int depth, int mode)
 {
+    std::cout<<"\n";
     std::cout << "Testing mode "<< mode <<" MTTKRP using BLCO Tensor\n";
     std::cout << "Tensor info: "<< rows << " x " << cols << 
     " x " << depth << ", " << nnz << " non zero entries\n";
 
     int dims[3] = {rows, cols, depth};
 
-    std::vector<NNZ_Entry<T>> test_vec = read_tensor_file<T>(filename,nnz);
+    std::vector<NNZ_Entry<T>> test_vec = read_tensor_file_binary<T>(filename);
 
     if(test_vec.empty()) return;
 
     auto construction_start = std::chrono::high_resolution_clock::now();
     BLCO_Tensor_3D<T,S> blco(test_vec, rows, cols, depth);
     auto construction_end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(construction_end - construction_start).count();
-    std::cout<<"Constructing the tensor took "<< duration << " ms\n";
+    auto construction_duration = std::chrono::duration_cast<std::chrono::milliseconds>(construction_end - construction_start).count();
+    std::cout<<"Constructing the tensor took "<< construction_duration << " ms\n";
 
     std::vector<T**> fmats = blco.get_fmats();
     T** input_matrix = fmats[mode - 1];
@@ -30,8 +31,8 @@ void mttkrp_benchmark(const std::string &filename, int nnz, int rows, int cols, 
     auto start = std::chrono::high_resolution_clock::now();
     T** output_matrix = MTTKRP_BLCO(mode,blco);
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    std::cout << "Elapsed time for MTTKRP: " << duration << " ms\n\n";
+    auto mttkrp_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    std::cout << "Elapsed time for MTTKRP: " << mttkrp_duration << " ms\n\n";
 
     int nt_modes1[3] = {2, 1, 1};
     int nt_modes2[3] = {3, 3, 2};
@@ -60,8 +61,6 @@ void mttkrp_benchmark(const std::string &filename, int nnz, int rows, int cols, 
         delete[] copy_input_matrix[i];
     }
     delete[] copy_input_matrix;
-
-    std::cout<<"\n";
 }
 
 int main(int argc, char* argv[]) {

@@ -1,43 +1,37 @@
-Amazon Tensor: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/amazon/amazon-reviews.tns.gz
-Dimensions: 4821207 x 1774269 x 1805187, Non zeros: 1741809018
-Compilation Instructions: N/A
-Passed: No
+----------Three dimensional tensors----------
 
-Darpa: https://frostt-tensors.s3.us-east-2.amazonaws.com/1998DARPA/1998darpa.tns.gz
 Dimensions: 22476 x 22476 x 23776223, Non zeros: 28436033
 Compilation Instructions (example): ./test_blco ../tensors/darpa.bin 28436033 22476 22476 23776223 1 int
-Passed: Yes
+Passed: No
 
 Freebase Music: https://frostt-tensors.s3.us-east-2.amazonaws.com/FB-M/fb-m.tns.gz
 Dimensions: 23344784 x 23344784 x 166, Non zeros: 99546551
 Compilation Instructions (example): ./test_blco ../tensors/fbm.bin 99546550 23344784 23344784 166 1 int
-Passed: Yes
+Passed: No
 
 NELL-1: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-1.tns.gz
 Dimensions: 2902330 x 2143368 x 25495389, Non zeros: 143599552
 Compilation Instructions (example): ./test_blco ../tensors/nell-1.bin 143599552 2902330 2143368 25495389 1 float
-Passed: Yes
+Passed: No
 
 NELL-2: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-2.tns.gz
 Dimensions: 12092 x 9184 x 28818, Non zeros: 76879419
 Compilation Instructions (example): ./test_blco ../tensors/nell-2.bin 76879419 12092 9184 28818 1 float
-Passed: Yes
-
-Patents: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/patents/patents.tns.gz 
-Dimensions: 46 x 239172 x 239172, Non Zeros: 3596640708
-Compilation Instructions: N/A
 Passed: No
 
-Reddit-2015: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/reddit-2015/reddit-2015.tns.gz
-Dimensions: 8211298 x 176962 x 8116559, Non Zeros: 4687474081
-Compilation Instructions: N/A
-Passed: No 
+----------Four dimensional tensors----------
 
-Notes:
-- Reddit-2015, Amazon, and Patents all have too many non zeros to stream in all at once.
-Future updates to this repository will have ways to stream them in.
-- The clean_tns function may alter the number of non zeros so use wc -l to check the number 
-of non zeros in the file after cleaning it up.
+Chicago Crime: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/chicago-crime/comm/chicago-crime-comm.tns.gz
+Dimensions: 6,186 x 24 x 77 x 32, Non zeros: 5330673
+Compilation Instructions (example): ./test_blco ../tensors/chicago_crime.bin 6186 24 77 32 1 int
+Passed: No
 
+Delcious: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/delicious/delicious-4d.tns.gz
+Dimensions: 532,924 x 17,262,471 x 2,480,308 x 1,443
+Compilation Instructions (example): ./test_blco ../tensors/delicious.bin 532924 17262471 2480308 x 1443 1 int
+Passed: No
+
+Enron Emails: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/enron/enron.tns.gz
+Dimensions: 6066 x 5699 x 244268 x 1176
 
 

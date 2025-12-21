@@ -1,13 +1,11 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-// ==========================
-// Standard Library Includes
-// ==========================
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <unordered_map>
 #include <iomanip>
 #include <iostream>
 #include <fstream>
@@ -21,77 +19,45 @@
 #include <omp.h>
 
 // ==========================
-// Constants
+// Namespace
 // ==========================
-// Maximum 64-bit unsigned integer (as 128-bit type)
-// Useful when checking tensor sizes that may exceed 64-bit range
-extern __uint128_t limit = 0xFFFFFFFFFFFFFFFF;
+namespace stats {
+    // The probability of a data point falling OUTSIDE these ranges 
+    // for a standard normal distribution.
+    constexpr double PROB_OUTSIDE_3SD = 0.002699796063; // ~1 in 370
+    constexpr double PROB_OUTSIDE_4SD = 0.000063342484; // ~1 in 15,787
+    constexpr double PROB_OUTSIDE_5SD = 0.000000573303; // ~1 in 1,744,278
+    
+    // The thresholds used in your find_anomalies_mapped function
+    constexpr float SIGMA_3 = 3.0f;
+    constexpr float SIGMA_4 = 4.0f;
+    constexpr float SIGMA_5 = 5.0f;
+}
 
 // ==========================
 // Structs
 // ==========================
 
-// Represents a single nonzero entry in a sparse tensor.
-// Stores the coordinate (i, j, k) and its value.
+// Represents a single nonzero entry in an N-dimensional sparse tensor.
 template<typename T>
 struct NNZ_Entry {
-    int i;      // row index
-    int j;      // column index
-    int k;      // depth index
-    T value;    // nonzero value at (i, j, k)
+    std::vector<int> coords; // Replaces i, j, k
+    T value;
 };
 
-//Represents the header of a binary tensor file
+// Represents the header of a binary tensor file
+// Note: In the binary file, the 'dims' array should strictly follow this struct.
 struct TensorHeader {
-    int32_t rows;
-    int32_t cols;
-    int32_t depth;
-    int64_t nnz;
+    int32_t rank;    // Number of dimensions (modes)
+    int64_t nnz;     // Number of non-zeros
+    // In binary format, write 'rank' integers for dimensions immediately after this struct
 };
 
-// ==========================
-// Forward Declarations
-// ==========================
-
-// --- Bit / Printing Utilities ---
-void print_lsb_bits(__uint128_t value, int x);  // print least-significant x bits of a 128-bit int
-void print_uint64(uint64_t value, int x);       // print least-significant x bits of a 64-bit int
-std::string uint128_to_sci_string(__uint128_t value, int precision = 15); // convert uint128_t to scientific notation string
-
-// --- Math Utilities ---
-int byte_size(int r, int c, int d);             // returns 64 or 128 depending on size of tensor
-template<typename S> int floor_log2(S x);       // floor(log2(x))
-template<typename S> int ceiling_log2(S x);     // ceil(log2(x))
-
-// --- Sparse Tensor Utilities ---
-template<typename T>
-std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
-    int rows, int cols, int depth,
-    float density, T min_val, T max_val,
-    int block_size = 8, int max_blocks = 20000);
-
-template<typename T>
-bool find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val); // check if specific entry exists
-
-// --- MTTKRP (Matricized Tensor Times Khatri-Rao Product) ---
-template<typename T>
-T** MTTKRP(int mode, T** M, T** A, T** B, int R,
-           const std::vector<NNZ_Entry<T>>& entries);
-
-// --- Matrix Utilities ---
-template<typename T> T** create_and_copy_matrix(T** basis, int rows, int cols); // deep copy a matrix
-template<typename T> int compare_matricies(T** m1, T** m2, int rows, int cols); // exact equality check
-template<typename T> int compare_matricies_id(T** m1, T** m2, int rows, int cols); // check and print differences
-template<typename T> T* vectorize_matrix(T** m1, int rows, int cols);            // flatten matrix into 1D vector
-template<typename T> void vector_to_array(T* a1, std::vector<T> v1);             // copy std::vector into raw array
-
-// --- Printing Helpers ---
-template<typename T> void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec); // print all tensor entries
-template<typename T> void print_matrix(T** matrix, int rows, int cols, int width = 6); // print 2D matrix with formatting
-
-// ==========================
-// Template / Inline Definitions
-// ==========================
+// Structure to hold statistics results
+struct StatsResult {
+    float mean;
+    float std_dev;
+};
 
 // --- Math Utilities ---
 
@@ -123,116 +89,129 @@ int ceiling_log2(S x) {
 // Generate a random sparse tensor with approximate block structure.
 // Parameters:
 //   - rows, cols, depth: tensor dimensions
-//   - density: fraction of nonzeros (between 0 and 1)
+//   - target nnz: Number of non zeros
 //   - min_val, max_val: value range for nonzeros
 //   - block_size: size of each "dense block"
 //   - max_blocks: stop condition for block attempts
 //
 // Uses random number generators to select starting coordinates and fill small blocks.
 template<typename T>
-std::vector<NNZ_Entry<T>> generate_block_sparse_tensor(
-    int rows, int cols, int depth,
-    float density, T min_val, T max_val,
-    int block_size, int max_blocks) 
-{
-    if (rows <= 0 || cols <= 0 || depth <= 0)
-        throw std::invalid_argument("All dimensions must be positive.");
-    if (density <= 0.0f || density > 1.0f)
-        throw std::invalid_argument("Density must be in (0,1].");
+std::vector<NNZ_Entry<T>> generate_block_sparse_tensor_nd(
+    const std::vector<int>& dims,   // tensor dimensions [D0, D1, D2, ...]
+    uint64_t target_nnz,            // target number of non-zero entries
+    T min_val, T max_val,           // value range
+    int block_size,                 // edge size of dense sub-blocks
+    int max_blocks,                 // cap for random block sampling
+    float dropout_rate = 0.5f       // per-entry dropout probability
+) {
+    int rank = dims.size();
+    if (rank < 2)
+        throw std::invalid_argument("Tensor rank must be >= 2.");
+    if (target_nnz == 0)
+        return {}; // Return empty if no non-zeros are requested
     if (min_val > max_val)
         throw std::invalid_argument("Invalid value range.");
 
-    // Compute target number of nonzeros
-    std::cout<<"rows: "<<rows<<" cols: "<<cols<<" depth: "<<depth<<" density: "<<density<<"\n";
-    uint64_t total_entries = static_cast<uint64_t>(rows) * cols * depth;
-    double target_nnz = static_cast<double>(total_entries) * density;
-
+    // Note: Removed the calculation of total_entries and the density check.
     std::vector<NNZ_Entry<T>> entries;
+    // Reserve space based on the requested target_nnz
     entries.reserve(target_nnz);
 
-    std::mt19937 rng(std::random_device{}()); // random seed
+    std::mt19937 rng(std::random_device{}());
 
-    int stride = block_size * 2; // spacing between blocks
-    std::uniform_int_distribution<int> i_start(0, std::max((rows - block_size) / stride, 1));
-    std::uniform_int_distribution<int> j_start(0, std::max((cols - block_size) / stride, 1));
-    std::uniform_int_distribution<int> k_start(0, std::max((depth - block_size) / stride, 1));
-
-    // Value distributions depending on type T
-    std::uniform_int_distribution<T> int_val_dist(min_val, max_val);
-    std::uniform_real_distribution<double> real_val_dist(static_cast<double>(min_val), static_cast<double>(max_val));
-    std::uniform_real_distribution<float> dropout_dist(0.0f, 1.0f); // skip ~50% randomly
-
+    // Distributions
+    std::uniform_real_distribution<float> dropout_dist(0.0f, 1.0f);
+    // std::uniform_int_distribution<int> block_pos_dist(0, 1000000); // Not used in the original loop logic
+    
     auto generate_value = [&]() -> T {
-        if constexpr (std::is_integral<T>::value) {
-            return int_val_dist(rng);
-        } else if constexpr (std::is_floating_point<T>::value) {
-            return static_cast<T>(real_val_dist(rng));
+        if constexpr (std::is_integral_v<T>) {
+            // Need to handle the case where T is integral but T is not the same as int
+            // Using a generic way to handle integral/floating point
+            using value_type = T;
+            std::uniform_int_distribution<value_type> dist(min_val, max_val);
+            return dist(rng);
+        } else if constexpr (std::is_floating_point_v<T>) {
+            using value_type = T;
+            std::uniform_real_distribution<value_type> dist(min_val, max_val);
+            return dist(rng);
         } else {
             throw std::invalid_argument("Unsupported type for value generation.");
         }
     };
 
+    // Compute stride = block spacing between start positions
+    int stride = block_size * 2;
+
+    // Generate blocks until target nonzeros reached
     uint64_t nnz_count = 0;
     int blocks_attempted = 0;
 
-    // Keep generating random blocks until enough nonzeros are produced
     while (nnz_count < target_nnz && blocks_attempted < max_blocks) {
         blocks_attempted++;
 
-        int i0 = i_start(rng) * stride;
-        int j0 = j_start(rng) * stride;
-        int k0 = k_start(rng) * stride;
+        // Random block start per dimension
+        std::vector<int> block_start(rank);
+        for (int r = 0; r < rank; ++r) {
+            // Calculate the maximum start position index based on stride
+            // Ensure the start position allows for a full block_size extent without exceeding dims[r]
+            int max_start_index = dims[r] - block_size;
+            int limit = std::max(max_start_index / stride, 0);
 
-        int bi_max = std::min(i0 + block_size, rows);
-        int bj_max = std::min(j0 + block_size, cols);
-        int bk_max = std::min(k0 + block_size, depth);
+            // The original logic was potentially flawed in calculating the limit, 
+            // relying on (dims[r] - block_size) / stride. Keeping the spirit but ensuring a valid distribution.
+            // If limit is 0, the only possible start is 0.
+            std::uniform_int_distribution<int> start_dist(0, limit);
+            block_start[r] = start_dist(rng) * stride;
+        }
 
-        for (int i = i0; i < bi_max && nnz_count < target_nnz; ++i) {
-            for (int j = j0; j < bj_max && nnz_count < target_nnz; ++j) {
-                for (int k = k0; k < bk_max && nnz_count < target_nnz; ++k) {
-                    if (dropout_dist(rng) < 0.5f) continue; // skip with prob 0.5
-                    entries.push_back({i, j, k, generate_value()});
-                    ++nnz_count;
-                }
+        // Recursive n-dimensional block filling (iterative implementation)
+        std::vector<int> idx(rank, 0);
+        bool done = false;
+
+        while (!done && nnz_count < target_nnz) {
+            // Compute the actual coordinates for this entry
+            std::vector<int> coord(rank);
+            for (int r = 0; r < rank; ++r)
+                coord[r] = block_start[r] + idx[r];
+
+            // Check bounds (redundant if block_start calculation is perfect, but safer to keep)
+            bool in_bounds = true;
+            for (int r = 0; r < rank; ++r)
+                if (coord[r] >= dims[r]) { in_bounds = false; break; }
+
+            // If entry is in bounds and passes dropout, add it
+            if (in_bounds && dropout_dist(rng) > dropout_rate) {
+                entries.push_back({coord, generate_value()});
+                ++nnz_count;
+            }
+
+            // Increment n-dimensional index inside the block
+            for (int r = rank - 1; r >= 0; --r) {
+                idx[r]++;
+                if (idx[r] < block_size)
+                    break; // Moved to the next entry in the block
+                idx[r] = 0; // Dimension wraps around
+                if (r == 0) done = true; // Block finished
             }
         }
     }
-
-    return entries;
-}
-
-// Read a tensor from a file (1-indexed format).
-// Each line: i j k value
-// Converts to 0-indexed internally.
-template<typename T>
-std::vector<NNZ_Entry<T>> read_tensor_file(const std::string &filename, size_t maxLines = 0) 
-{
-    std::ifstream file(filename);
-    std::vector<NNZ_Entry<T>> entries;
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return entries;
-    }
-
-    int i, j, k;
-    T value;
-    size_t count = 0;
-
-    while (file >> i >> j >> k >> value) {
-        entries.push_back({i-1, j-1, k-1, value}); // shift to 0-index
-        count++;
-        if (maxLines > 0 && count >= maxLines) break;
+    
+    // Crucial step: If we overshot the target_nnz in the last block, truncate the vector.
+    if (entries.size() > target_nnz) {
+        entries.resize(target_nnz);
     }
 
     return entries;
 }
 
+// -----------------------------------------------------------
+// N-Dimensional Binary File Reader
+// -----------------------------------------------------------
 // Read a tensor from a binary file (1-indexed format).
-// Each line: i j k value
+// Each line: index values
 // Converts to 0-indexed internally.
 template<typename T>
-std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, size_t maxEntries = 0) 
+std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, std::vector<int>& out_dims) 
 {
     std::ifstream file(filename, std::ios::binary);
     std::vector<NNZ_Entry<T>> entries;
@@ -242,69 +221,88 @@ std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, s
         return entries;
     }
 
-    // Read header
-    TensorHeader header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(header));
+    // 1. Read Header (Rank + NNZ)
+    // We assume the file starts with: [int32 rank, int64 nnz]
+    int32_t rank;
+    int64_t nnz;
+    file.read(reinterpret_cast<char*>(&rank), sizeof(rank));
+    file.read(reinterpret_cast<char*>(&nnz), sizeof(nnz));
 
-    size_t toRead = (maxEntries > 0) ? std::min<size_t>(header.nnz, maxEntries) 
-                                     : header.nnz;
+    // 2. Read Dimensions
+    // The next 'rank' integers are the dimensions
+    out_dims.resize(rank);
+    file.read(reinterpret_cast<char*>(out_dims.data()), rank * sizeof(int32_t));
 
-    entries.resize(toRead);
+    // 3. Read Entries
+    entries.resize(nnz);
+    
+    // Calculate entry size: (Rank * 4 bytes) + sizeof(T)
+    size_t coord_size = rank * sizeof(int32_t);
+    size_t val_size = sizeof(T);
+    std::vector<char> buffer(coord_size + val_size);
 
-    // Read entries directly into vector
-    file.read(reinterpret_cast<char*>(entries.data()), toRead * sizeof(NNZ_Entry<T>));
-
-    if (!file) {
-        std::cerr << "Error: Only read " << file.gcount() << " bytes from " << filename << "\n";
-    }
-
-    for (auto &e : entries) {
-        e.i -= 1;
-        e.j -= 1;
-        e.k -= 1;
+    for(size_t i = 0; i < nnz; ++i) {
+        entries[i].coords.resize(rank);
+        
+        // Read coordinates directly into the vector's underlying array
+        file.read(reinterpret_cast<char*>(entries[i].coords.data()), rank * sizeof(int32_t));
+        
+        // Read the value directly into the value member
+        file.read(reinterpret_cast<char*>(&entries[i].value), sizeof(T));
+        
+        for(auto& c : entries[i].coords) c -= 1; 
     }
 
     return entries;
 }
 
-// Return true if a given entry exists in the tensor.
+// Check if entry exists (N-dimensional)
 template<typename T>
-bool find_entry(std::vector<NNZ_Entry<T>> entry_vec, int r, int c, int d, T val) {
-    for (size_t i = 0; i < entry_vec.size(); i++) {
-        if (entry_vec[i].i == r && entry_vec[i].j == c &&
-            entry_vec[i].k == d && entry_vec[i].value == val) {
+bool find_entry(const std::vector<NNZ_Entry<T>>& entry_vec, const std::vector<int>& coords, T val) {
+    for (const auto& entry : entry_vec) {
+        if (entry.value == val && entry.coords == coords) {
             return true;
         }
     }
     return false;
 }
 
-// --- MTTKRP ---
-
-// Perform matricized tensor times Khatri-Rao product (MTTKRP).
-// Updates the factor matrix M depending on the mode:
-//   mode 1 → accumulate into M[row][r]
-//   mode 2 → accumulate into M[col][r]
-//   mode 3 → accumulate into M[depth][r]
+/**
+ * N-Dimensional MTTKRP (Flattened Row-Major)
+ * mode: The target mode to update (1-indexed)
+ * (M): Flattened target factor matrix (Size: dim_size * R)
+ * factors: Vector of flattened factor matrices (Each size: dim_size_m * R)
+ * (R): The decomposition rank
+ * entries: The sparse tensor non-zero entries
+ */
 template<typename T>
-T** MTTKRP(int mode, T** M, T** A, T** B, int R,
-           const std::vector<NNZ_Entry<T>>& entries) 
+T* MTTKRP_Naive(int mode, T* M, const std::vector<T*>& factors, int R,
+                   const std::vector<NNZ_Entry<T>>& entries) 
 {
-    int count = 0;
+    int target_dim_idx = mode - 1;   // 0-indexed mode
+    int num_modes = factors.size(); // Tensor order (N)
+
     for (const auto& entry : entries) {
-        count++;
+        int target_row = entry.coords[target_dim_idx];
+        T val = entry.value;
+
+        // The target row in a row-major flattened matrix starts at: target_row * R
+        int target_offset = target_row * R;
+
         for (int r = 0; r < R; ++r) {
-            T contrib = 0;
-            if (mode == 1) {
-                contrib = A[entry.j][r] * B[entry.k][r];
-                M[entry.i][r] += entry.value * contrib;
-            } else if (mode == 2) {
-                contrib = A[entry.i][r] * B[entry.k][r];
-                M[entry.j][r] += entry.value * contrib;
-            } else if (mode == 3) {
-                contrib = A[entry.i][r] * B[entry.j][r];
-                M[entry.k][r] += entry.value * contrib;
+            T product_sum = 1;
+
+            // Multiply contributions from all OTHER modes
+            for (int m = 0; m < num_modes; ++m) {
+                if (m == target_dim_idx) continue;
+                
+                int row_idx = entry.coords[m];
+                // Accessing factors[m](row_idx, r) -> factors[m][row_idx * R + r]
+                product_sum *= factors[m][row_idx * R + r];
             }
+
+            // Accumulate into flattened target matrix M
+            M[target_offset + r] += val * product_sum;
         }
     }
     return M;
@@ -324,95 +322,132 @@ T** create_and_copy_matrix(T** basis, int rows, int cols) {
     return copy_matrix;
 }
 
-// Return 1 if matrices are exactly equal, 0 otherwise
+// Return true if matrices are exactly equal, false otherwise
 template<typename T>
-int compare_matricies(T** m1, T** m2, int rows, int cols) {
+bool compare_matricies(T** m1, T** m2, int rows, int cols) {
     for (int i = 0; i < rows; i++)
         for (int j = 0; j < cols; j++)
-            if (m1[i][j] != m2[i][j]) return 0;
-    return 1;
+            if (m1[i][j] != m2[i][j]) return false;
+    return true;
 }
 
-// Compare float matrices with tolerance epsilon (relative error).
-// Uses OpenMP parallelization for speed.
-bool compare_matricies_float(float** m1, float** m2, int rows, int cols, float epsilon = 1.0f) {
-    bool equal = true;
+// Compares floating point/double matricies and outputs the absolute difference
+template<typename T>
+double compare_matricies_float(T** m1, T** m2, int rows, int cols) {
+    double diff = 0.0;
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
+            diff += std::abs(m1[i][j] - m2[i][j]);
+    return diff / (rows * cols);
+}
 
-    #pragma omp parallel for collapse(2) shared(equal)
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            if (!equal) continue;  
-            if (fabs(m1[i][j] - m2[i][j]) > epsilon * fabs(m1[i][j])) {
-                #pragma omp atomic write
-                equal = false;
+// Convert matrix to array
+template<typename T>
+T* mat_to_array(T** m1, int rows, int cols) {
+    T* arr = new T[rows * cols];
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            arr[i * cols + j] = m1[i][j];
+        }
+    }
+    return arr;
+}
+
+template<typename T>
+void print_matrix_to_file(const T* data, size_t rows, size_t cols, 
+                       const std::string& filename, const std::string& mat_name,
+                       int precision = 6, int width = 12) {
+    std::ofstream outfile(filename, std::ios::app);
+    
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+    
+    // Set formatting
+    outfile << std::fixed << std::setprecision(precision);
+    outfile << mat_name << "\n";
+    
+    // Write matrix
+    for (size_t i = 0; i < rows; i++) {
+        for (size_t j = 0; j < cols; j++) {
+            size_t idx = i * cols + j;  // Row-major indexing
+            outfile << std::setw(width) << data[idx];
+            
+            if (j < cols - 1) {
+                outfile << " ";  // Space between columns
+            }
+        }
+        outfile << "\n";  // Newline after each row
+    }
+    outfile << "\n\n"; 
+    
+    outfile.close();
+    std::cout << "Matrix written to " << filename 
+              << " (" << rows << "x" << cols << ")\n";
+    
+}
+
+template<typename T>
+void print_differences_to_file(const T* m1, const T* m2, size_t rows, size_t cols, 
+                       const std::string& filename, const std::string& m1_name,
+                       const std::string& m2_name, int precision = 6, int width = 12) {
+    std::ofstream outfile(filename, std::ios::app);
+    
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+    
+    // Set formatting
+    outfile << std::fixed << std::setprecision(precision);
+    
+    // Write matrix
+    for (size_t i = 0; i < rows; i++) {
+        for (size_t j = 0; j < cols; j++) {
+            size_t idx = i * cols + j;  // Row-major indexing
+            if(m1[idx] != m2[idx]){
+                outfile << m1_name << " val: " << m1[idx] << ", " << m2_name << " val: " << m2[idx] 
+                << " at idx (" << i << ", " << j << ")\n";
             }
         }
     }
-    return equal;
+    outfile << "\n\n"; 
+    
+    outfile.close();
+    std::cout << "Differences written to " << filename 
+              << " (" << rows << "x" << cols << ")\n";
+    
 }
 
-// Compare matrices and log mismatches
+// --- Array Utilities ---
+
+// Deep copy of a array (allocate and copy all entries)
 template<typename T>
-int compare_matricies_id(T** m1, T** m2, int rows, int cols, std::ostream& out) {
-    for (int i = 0; i < rows; i++)
-        for (int j = 0; j < cols; j++)
-            if (m1[i][j] != m2[i][j]) 
-                out << "values " << m1[i][j] << " and " << m2[i][j]
-                    << " at index " << i << " " << j << " don't match\n";
-    return 1;
+T* create_and_copy_array(T* basis, int size) {
+    T* copy_arr = new T[size];
+    for (int i = 0; i < size; ++i)
+        copy_arr[i] = basis[i];
+    return copy_arr;
 }
 
-// Same as above, but for floats with tolerance
-int compare_matricies_id_float(float** m1, float** m2, int rows, int cols, 
-                               std::ostream& out, float epsilon = 1.0) {
-    for (int i = 0; i < rows; i++){
-        for (int j = 0; j < cols; j++){
-            if (fabs(m1[i][j] - m2[i][j]) > epsilon * fabs(m1[i][j])) 
-                out << "values " << m1[i][j] << " and " << m2[i][j]
-                    << " at index " << i << " " << j << " don't match\n";
-        }
-    }
-    return 1;
-}
-
-// Flatten a 2D matrix into a 1D vector (row-major)
+// Return true if arrays are exactly equal, false otherwise
 template<typename T>
-T* vectorize_matrix(T** m1, int rows, int cols) {
-    T* ret_vector = new T[rows * cols];
-    for (int i = 0; i < rows; i++)
-        for (int j = 0; j < cols; j++)
-            ret_vector[i * cols + j] = m1[i][j];
-    return ret_vector;
+bool compare_arrays(T* a1, T* a2, int size) {
+    for (int i = 0; i < size; i++)
+            if (a1[i] != a2[i]) return false;
+    return true;
 }
 
-// Flatten and repeat a matrix multiple times into one long vector
+// Compares floating point/double arrays and outputs the absolute difference
 template<typename T>
-T* vectorize_and_multiply_matrix(T** m1, int rows, int cols, int copies) {
-    T* ret_vector = new T[copies * rows * cols];
-    for (int copy = 0; copy < copies; copy++) {
-        for (int i = 0; i < rows; i++) {
-            for (int j = 0; j < cols; j++) {
-                ret_vector[copy * rows * cols + i * cols + j] = m1[i][j];
-            }
-        }
-    }
-    return ret_vector;
+double compare_arrays_float(T* a1, T* a2, int size) {
+    double diff = 0.0;
+    for (int i = 0; i < size; i++)
+            diff += std::abs(a1[i] - a2[i]);
+    return diff / size;
 }
 
-// Copy a flat vector back into a 2D matrix
-template<typename T>
-void copy_vector_to_matrix(T* &v1, T** &m1, int rows, int cols){
-    for(int i = 0; i < rows * cols; i++){
-        m1[i/rows][i % rows] = v1[i];
-    }
-}
-
-// Copy std::vector into raw C-style array
-template<typename T>
-void vector_to_array(T* a1, std::vector<T> v1) {
-    for (int i = 0; i < v1.size(); i++)
-        a1[i] = v1[i];
-}
 
 // --- Printing Helpers ---
 
@@ -420,15 +455,10 @@ void vector_to_array(T* a1, std::vector<T> v1) {
 template<typename T>
 void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec) {
     for (size_t i = 0; i < entry_vec.size(); ++i) {
-        try {
-            std::cout << "i:" << entry_vec[i].i
-                      << " j:" << entry_vec[i].j
-                      << " k:" << entry_vec[i].k
-                      << " val:" << entry_vec[i].value << "\n";
-        } catch (const std::exception& e) {
-            std::cerr << "Error printing entry at index " << i
-                      << ": " << e.what() << "\n";
+        for(int j = 0; j < entry_vec[i].coords.size(); j++){
+            std::cout << "mode " << j + 1 << " idx: " << entry_vec[i].coords[j] << " ";
         }
+        std::cout << "val: " << entry_vec[i].value << "\n";
     }
 }
 
@@ -493,9 +523,103 @@ std::string uint128_to_sci_string(__uint128_t value, int precision) {
     return oss.str();
 }
 
-int byte_size(int r, int c, int d) {
-    if ((__uint128_t)r * c * d >= limit) return 128;
-    return 64;
+// ==========================
+// Statistical Functions
+// ==========================
+
+/**
+ * Calculates the mean and standard deviation of a float vector.
+ * Uses OpenMP for parallel reduction, matching the style of tensor_impl.h.
+ */
+StatsResult calculate_statistics(const std::vector<float>& data) {
+    if (data.empty()) {
+        return {0.0f, 0.0f};
+    }
+
+    size_t n = data.size();
+    double sum = 0.0;
+    double sq_sum = 0.0;
+
+    // Parallel reduction for sum and squared sum
+    // Using double for accumulation to minimize precision loss
+    #pragma omp parallel for reduction(+:sum, sq_sum)
+    for (size_t i = 0; i < n; ++i) {
+        sum += data[i];
+        sq_sum += data[i] * data[i];
+    }
+
+    float mean = static_cast<float>(sum / n);
+    double variance = (sq_sum / n) - (mean * mean);
+    
+    // Ensure variance is non-negative (can happen due to floating point epsilon)
+    if (variance < 0) variance = 0;
+
+    return {mean, std::sqrt(static_cast<float>(variance))};
+}
+
+/**
+ * Calculates the count of anomalies at 3, 4, and 5 standard deviations.
+ * The input dataset
+ * The pre-calculated mean and standard deviation
+ * A map where keys are {3, 4, 5} and values are the count of anomalies
+ */
+
+std::unordered_map<int, int> find_anomalies(const std::vector<float>& data, StatsResult stats) {
+    // Initialize map with 0 counts for our specific keys
+    std::unordered_map<int, int> anomaly_counts = {{3, 0}, {4, 0}, {5, 0}};
+    
+    if (stats.std_dev <= 0.0f) {
+        return anomaly_counts; 
+    }
+
+    float mean = stats.mean;
+    float sd = stats.std_dev;
+
+    // Pre-calculate thresholds to avoid repeated multiplication in the loop
+    float thresh3 = 3.0f * sd;
+    float thresh4 = 4.0f * sd;
+    float thresh5 = 5.0f * sd;
+
+    for (const float& val : data) {
+        float diff = std::abs(val - mean);
+
+        // Check 3 SD
+        if (diff > thresh3) {
+            anomaly_counts[3]++;
+            
+            // Check 4 SD
+            if (diff > thresh4) {
+                anomaly_counts[4]++;
+                
+                // Check 5 SD
+                if (diff > thresh5) {
+                    anomaly_counts[5]++;
+                }
+            }
+        }
+    }
+
+    return anomaly_counts;
+}
+
+// Helper function to calculate nCr (Binomial Coefficient)
+double binomialCoefficient(int n, int k) {
+    if (k < 0 || k > n) return 0;
+    if (k == 0 || k == n) return 1;
+    if (k > n / 2) k = n - k; // Take advantage of symmetry
+
+    double res = 1;
+    for (int i = 1; i <= k; ++i) {
+        res = res * (n - k + i) / i;
+    }
+    return res;
+}
+
+// Function to calculate Binomial Probability
+double binomialProbability(int n, int k, double p) {
+    double nCr = binomialCoefficient(n, k);
+    double prob = nCr * std::pow(p, k) * std::pow(1.0 - p, n - k);
+    return prob;
 }
 
 #endif

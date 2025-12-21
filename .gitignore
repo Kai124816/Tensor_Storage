@@ -43,12 +43,13 @@ test_*
 /out/
 /Debug/
 /Release/
+tests/mttkrp_tests/rocprof_output/
 
 # ===== Reference Code Directories =====
 /ref/
 
 # ===== Directory with helper files =====
-/helper_code/
+utility/personal_utils/
 
 # ===== Directory with output files =====
 /output/
