@@ -3,14 +3,16 @@
 # Exit immediately on error
 set -e
 
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <link> <data_type>"
-    echo "Example: $0 http://example.com/tensor.tns.gz double"
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <link> <data_type> <rank>"
+    echo "Example: $0 http://example.com/tensor.tns.gz double 3"
     exit 1
 fi
 
 LINK=$1
 DTYPE=$2
+RANK=$3
+
 
 # ============================
 # Step 1: Download the file
@@ -37,6 +39,8 @@ echo "Running clean_tns on $TENSOR_FILE..."
 
 # After clean_tns runs, assume output is "tensor_clean.txt"
 CLEAN_FILE="$TENSOR_FILE"
+echo "First ten lines of file:"
+head -n 10 "$TENSOR_FILE"
 
 # Remove the helper
 rm clean_tns
@@ -48,7 +52,7 @@ echo "Compiling txt2bin.cc..."
 g++ -O2 -o txt2bin txt2bin.cc
 
 echo "Converting $CLEAN_FILE to binary (tensor.bin) with type $DTYPE..."
-./txt2bin "$CLEAN_FILE" tensor.bin "$DTYPE"
+./txt2bin "$CLEAN_FILE" tensor.bin $RANK "$DTYPE"
 
 # Cleanup
 rm txt2bin

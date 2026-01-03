@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <omp.h>
+#include <algorithm>
 #include "tensor_impl.h"
 
 //======================================================================
@@ -29,7 +30,8 @@ struct ALTOEntry {
 //   - Partitions NNZs for parallel algorithms.
 //======================================================================
 template<typename T, typename S>
-class Alto_Tensor : public Tensor<T, S>{
+class Alto_Tensor : public Tensor<T, S>
+{
 protected:
     int num_threads;                            // Number of threads for parallel MTTKRP                        
     std::vector<S> bitmasks;                    // Stores bitmasks for each mode
@@ -73,10 +75,10 @@ protected:
     {
         int start = (block_index > 0) ? partitions[block_index - 1] : 0;
         int end = partitions[block_index];
-        int min = std::max(this->dims);
+        int min = *(std::max_element(this->dims.begin(), this->dims.end()));
 
         for(int i = start; i < end; i++){
-            int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
+            int idx = get_mode_idx_alto(alto_tensor[i].linear_index, mode);
             if(idx < min) min = idx;
         }
         return min;
@@ -92,7 +94,7 @@ protected:
         int max = 0;
 
         for(int i = start; i < end; i++){
-            int idx = get_mode_idx(alto_tensor[i].linear_index, mode);
+            int idx = get_mode_idx_alto(alto_tensor[i].linear_index, mode);
             if(idx > max) max = idx;
         }
         return max;
@@ -123,7 +125,7 @@ protected:
         // Map: fiber index → set of blocks that contain it
         for (int i = 0; i < alto_tensor.size(); ++i) {
             S lin_idx = alto_tensor[i].linear_index;
-            int idx = get_mode_idx(lin_idx, mode);
+            int idx = get_mode_idx_alto(lin_idx, mode);
             int block = determine_block(i);
             fiber_blocks[idx].insert(block);
         }
@@ -131,7 +133,7 @@ protected:
         // Mark boundary entries
         for (int i = 0; i < alto_tensor.size(); ++i) {
             S lin_idx = alto_tensor[i].linear_index;
-            int idx = get_mode_idx(lin_idx, mode);
+            int idx = get_mode_idx_alto(lin_idx, mode);
             int block = determine_block(i);
 
             if (fiber_blocks[idx].size() > 1) {
@@ -157,7 +159,7 @@ protected:
     int largest_mode(std::vector<int> bits)
     {
         int max_mode = 1; //Find the mode with the largest number of bits left
-        bool all_zeros = true;
+        bool all_zeros = bits[0] == 0;
         for(int i = 1; i < bits.size(); i++){
             if(all_zeros && bits[i] > 0) all_zeros = false;
             if((bits[i] > bits[max_mode - 1]) || (bits[i] == bits[max_mode - 1] && this->dims[i] > this->dims[max_mode - 1])) max_mode = i + 1;
@@ -279,113 +281,121 @@ public:
         }
     }
     
-    //------------------------------------------------------------------
-    // Parallel MTTKRP
-    // Two strategies:
-    //   - If fibers overlap across blocks → atomics
-    //   - Else use private accumulation per thread then merge
-    //------------------------------------------------------------------
-    // T** MTTKRP_Alto_Parallel(int mode) {
-    //     omp_set_num_threads(num_threads);
-    //     int shift = ceiling_log2(this->rows) + ceiling_log2(this->cols) + ceiling_log2(this->depth);
-
-    //     int num_fibers = (mode == 1) ? this->cols * this->depth :
-    //                     (mode == 2) ? this->rows * this->depth :
-    //                                   this->rows * this->cols;
-
-    //     if(this->nnz_entries/num_fibers < 4){
-    //         // Fiber reuse is low → use atomics
-    //         set_boundaries(mode);
-    //         S mask = S(1) << num_bits;
-
-    //         #pragma omp parallel
-    //         {
-    //             int thread_id = omp_get_thread_num();
-    //             int start = (thread_id > 0) ? partitions[thread_id-1] : 0;
-    //             int end   = partitions[thread_id];
-
-    //             for (int m = start; m < end; ++m) {
-    //                 S idx = alto_tensor[m].linear_index;
-    //                 T val = alto_tensor[m].value;
-    //                 bool boundary = (idx >> shift) & S(1) != 0;
-    //                 idx &= ~mask;
-
-    //                 int i = get_mode_idx(idx, 1);
-    //                 int j = get_mode_idx(idx, 2);
-    //                 int k = get_mode_idx(idx, 3);
-
-    //                 for (int r = 0; r < this->rank; ++r) {
-    //                     if (mode == 1) {
-    //                         if (boundary){ 
-    //                             #pragma omp atomic
-    //                             this->mode_1_fmat[i][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
-    //                         }
-    //                         else this->mode_1_fmat[i][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
-    //                     }
-    //                     else if (mode == 2) {
-    //                         if (boundary){ 
-    //                             #pragma omp atomic
-    //                             this->mode_2_fmat[j][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r]; 
-    //                         }
-    //                         else this->mode_2_fmat[j][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r];
-    //                     }
-    //                     else {
-    //                         if (boundary){ 
-    //                             #pragma omp atomic
-    //                             this->mode_3_fmat[k][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r]; 
-    //                         }
-    //                         else this->mode_3_fmat[k][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r];
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         reset_boundaries();
-    //     }
-    //     else{
-    //         // Fiber reuse is high → use private accumulation then merge
-    //         #pragma omp parallel
-    //         {
-    //             int thread_id = omp_get_thread_num();
-    //             int start = (thread_id > 0) ? partitions[thread_id-1] : 0;
-    //             int end   = partitions[thread_id];
-
-    //             int block_offset = determine_block_offset(mode, thread_id);
-    //             int block_limit  = determine_block_limit(mode, thread_id);
-    //             int mode_range   = block_limit - block_offset + 1;
-
-    //             // Thread-local accumulation buffer
-    //             T** temp_arr = new T*[mode_range];
-    //             for (int i = 0; i < mode_range; ++i)
-    //                 temp_arr[i] = new T[this->rank](); // zero-initialize
-
-    //             for (int m = start; m < end; ++m) {
-    //                 S idx = alto_tensor[m].linear_index;
-    //                 T val = alto_tensor[m].value;
-
-    //                 int i = get_mode_idx(idx, 1);
-    //                 int j = get_mode_idx(idx, 2);
-    //                 int k = get_mode_idx(idx, 3);
-
-    //                 for (int r = 0; r < this->rank; ++r) {
-    //                     if (mode == 1) temp_arr[i - block_offset][r] += val * this->mode_2_fmat[j][r] * this->mode_3_fmat[k][r];
-    //                     else if (mode == 2) temp_arr[j - block_offset][r] += val * this->mode_1_fmat[i][r] * this->mode_3_fmat[k][r];
-    //                     else temp_arr[k - block_offset][r] += val * this->mode_1_fmat[i][r] * this->mode_2_fmat[j][r];
-    //                 }
-    //             }
-
-    //             // Merge results back into global factor matrices
-    //             for (int i = 0; i < mode_range; ++i)
-    //                 for (int j = 0; j < this->rank; ++j)
-    //                     if (mode == 1) this->mode_1_fmat[i + block_offset][j] += temp_arr[i][j];
-    //                     else if (mode == 2) this->mode_2_fmat[i + block_offset][j] += temp_arr[i][j];  
-    //                     else this->mode_3_fmat[i + block_offset][j] += temp_arr[i][j];
-
-    //             this->delete_matrix(temp_arr, mode_range, this->rank); 
-    //         }
-    //     }
-    //     return (mode == 1) ? this->mode_1_fmat :
-    //            (mode == 2) ? this->mode_2_fmat : this->mode_3_fmat;
-    // }
+    T* MTTKRP_Alto_Parallel(int target_mode) 
+    {
+        omp_set_num_threads(num_threads);
+        const int num_modes = this->rank;
+        const int R = this->factor_rank;
+        
+        // Total bits for bit-masking
+        int total_shift = 0;
+        for(int d = 0; d < num_modes; ++d) total_shift += ceiling_log2(this->dims[d]);
+    
+        // Heuristic for fiber reuse
+        long long total_dim_prod = 1;
+        for(int d = 0; d < num_modes; ++d) {
+            if(d != (target_mode - 1)) total_dim_prod *= this->dims[d];
+        }
+        
+        // Strategy selection
+        if(this->nnz_entries / total_dim_prod < 4) {
+            // --- Strategy 1: Atomic Accumulation ---
+            set_boundaries(target_mode);
+            S mask = S(1) << this->num_bits;
+    
+            #pragma omp parallel
+            {
+                int thread_id = omp_get_thread_num();
+                int start = (thread_id > 0) ? partitions[thread_id-1] : 0;
+                int end   = partitions[thread_id];
+                
+                // Local indices array to avoid repeated re-allocation
+                int* local_indices = new int[num_modes]; 
+    
+                for (int m = start; m < end; ++m) {
+                    S idx = alto_tensor[m].linear_index;
+                    T val = alto_tensor[m].value;
+                    bool boundary = (idx >> total_shift) & S(1) != 0;
+                    idx &= ~mask;
+    
+                    for(int d = 1; d <= num_modes; ++d) {
+                        local_indices[d-1] = get_mode_idx_alto(idx, d);
+                    }
+    
+                    int target_row = local_indices[target_mode - 1];
+                    T* target_fmat = this->fmats[target_mode - 1];
+    
+                    for (int r = 0; r < R; ++r) {
+                        T product = val;
+                        for(int d = 1; d <= num_modes; ++d) {
+                            if(d == target_mode) continue;
+                            // Flattened access: matrix[row * rank + r]
+                            product *= this->fmats[d-1][local_indices[d-1] * R + r];
+                        }
+    
+                        if (boundary) {
+                            #pragma omp atomic
+                            target_fmat[target_row * R + r] += product;
+                        } else {
+                            target_fmat[target_row * R + r] += product;
+                        }
+                    }
+                }
+                delete[] local_indices;
+            }
+            reset_boundaries();
+        } 
+        else {
+            // --- Strategy 2: Private Accumulation ---
+            #pragma omp parallel
+            {
+                int thread_id = omp_get_thread_num();
+                int start = (thread_id > 0) ? partitions[thread_id-1] : 0;
+                int end   = partitions[thread_id];
+    
+                int block_offset = determine_block_offset(target_mode, thread_id);
+                int block_limit  = determine_block_limit(target_mode, thread_id);
+                int mode_range   = block_limit - block_offset + 1;
+    
+                // Thread-local accumulation buffer (Flattened)
+                T* temp_buffer = new T[mode_range * R](); 
+                int* local_indices = new int[num_modes];
+    
+                for (int m = start; m < end; ++m) {
+                    S idx = alto_tensor[m].linear_index;
+                    T val = alto_tensor[m].value;
+    
+                    for(int d = 1; d <= num_modes; ++d) {
+                        local_indices[d-1] = get_mode_idx_alto(idx, d);
+                    }
+    
+                    int target_row = local_indices[target_mode - 1];
+    
+                    for (int r = 0; r < R; ++r) {
+                        T product = val;
+                        for(int d = 1; d <= num_modes; ++d) {
+                            if(d == target_mode) continue;
+                            product *= this->fmats[d-1][local_indices[d-1] * R + r];
+                        }
+                        temp_buffer[(target_row - block_offset) * R + r] += product;
+                    }
+                }
+    
+                // Merge back using flattened indexing
+                T* global_target_fmat = this->fmats[target_mode - 1];
+                for (int i = 0; i < mode_range; ++i) {
+                    for (int r = 0; r < R; ++r) {
+                        #pragma omp atomic
+                        global_target_fmat[(i + block_offset) * R + r] += temp_buffer[i * R + r];
+                    }
+                }
+    
+                delete[] temp_buffer;
+                delete[] local_indices;
+            }
+        }
+        return this->fmats[target_mode - 1];
+    }
 };
 
 #endif

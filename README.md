@@ -1,6 +1,6 @@
 ## Tensor_Storage
 
-Tensor_Storage is a high-performance C++ library designed for efficient storage and manipulation of three dimensional (for now) tensors. It supports various tensor formats and provides parallelized implementations of the Matricized Tensor Times Khatri-Rao Product (MTTKRP) operation on both CPU and AMD GPU architectures.
+Tensor_Storage is a high-performance C++ library designed for efficient storage and manipulation of three, four, and five dimensional tensors. It supports various tensor formats and provides parallelized implementations of the Matricized Tensor Times Khatri-Rao Product (MTTKRP) operation on both CPU and AMD GPU architectures.
 
 ## Features
 
@@ -20,8 +20,8 @@ ROCm SDK: Required for AMD GPU support if you want to run the BLCO MTTKRP. Follo
 
 ## Downloading Tensors
 
-1. Run the download_and_convert.sh file followed by the tensor link and the type of data it holds
-ex() ./download_and_convert.sh https://frostt-tensors.s3.us-east-2.amazonaws.com/1998DARPA/1998darpa.tns.gz int
+1. Run the download_and_convert.sh file followed by the tensor link, the type of data it holds, and
+the number of dimensions. ex() ./download_and_convert.sh https://frostt-tensors.s3.us-east-2.amazonaws.com/1998DARPA/1998darpa.tns.gz int 3
 2. The download_and_convert.sh script will generate a tensor.bin file which you can rename if you choose to.
 
 Note: you can use the head -n 100 to read the first 100 lines of the file and to check what data
@@ -29,7 +29,7 @@ type the file is
 
 ## Compilation and Execution
 
-Default compilation Instruction to test BLCO tensor: hipcc -std=c++17 -O3 -fopenmp blco_tests.cc -o test_blco
+Default compilation Instruction to test BLCO tensor: hipcc -std=c++17 -g -O3 --offload-arch=gfx942 -fopenmp. Instructions are contained in MakeFile. (Change --offload-arch= instructions if running on differnt GPU)
 
 other options:
 -Wall: For extra warnings

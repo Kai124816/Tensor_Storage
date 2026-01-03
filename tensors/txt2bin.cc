@@ -22,33 +22,21 @@
 // Converter Function
 // =====================
 template <typename T>
-void convertTxtToBin(const std::string &inputFile, const std::string &outputFile, int rank) {
-    if (rank <= 0) {
-        throw std::invalid_argument("Rank must be a positive integer.");
-    }
-
+void convertTxtToBin(const std::string &inputFile, const std::string &outputFile, int rank, bool writeHeader = false) {
     std::ifstream fin(inputFile);
     if (!fin.is_open()) {
         throw std::runtime_error("Error: could not open input file " + inputFile);
     }
 
-    // First pass: find max indices for each dimension and count nnz
-    std::vector<int32_t> max_indices(rank, 0);
+    // Pass 1: Count NNZ and validate format
     int64_t nnz = 0;
-    
     std::string line;
     while (std::getline(fin, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        int32_t coord;
-        for (int d = 0; d < rank; ++d) {
-            if (!(ss >> coord)) break;
-            max_indices[d] = std::max(max_indices[d], coord);
-        }
+        if (line.empty() || line[0] == '#') continue; // Skip comments and empty lines
         nnz++;
     }
 
-    // Rewind input
+    // Rewind
     fin.clear();
     fin.seekg(0, std::ios::beg);
 
@@ -57,40 +45,48 @@ void convertTxtToBin(const std::string &inputFile, const std::string &outputFile
         throw std::runtime_error("Error: could not open output file " + outputFile);
     }
 
-    // --- Write Header ---
-    // 1. Rank
-    fout.write(reinterpret_cast<const char*>(&rank), sizeof(int32_t));
-    // 2. Dimensions (assuming 0-indexed input, so size = max_index + 1)
-    for (int d = 0; d < rank; ++d) {
-        int32_t dim_size = max_indices[d] + 1;
-        fout.write(reinterpret_cast<const char*>(&dim_size), sizeof(int32_t));
+    // ONLY write header if you update your reader to expect it!
+    // Our previous 'read_tensor_file_binary' assumes NO header.
+    if (writeHeader) {
+        int32_t r32 = static_cast<int32_t>(rank);
+        fout.write(reinterpret_cast<const char*>(&r32), sizeof(int32_t));
+        // Note: Dimensions are omitted here for brevity as they require a 
+        // third pass or storing all max values during Pass 1.
+        fout.write(reinterpret_cast<const char*>(&nnz), sizeof(int64_t));
     }
-    // 3. NNZ
-    fout.write(reinterpret_cast<const char*>(&nnz), sizeof(int64_t));
 
-    // --- Write Entries ---
+    // Pass 2: Write entries
     std::vector<int32_t> coords(rank);
     T value;
-    while (std::getline(fin, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        
-        // Read coordinates
-        for (int d = 0; d < rank; ++d) {
-            ss >> coords[d];
-        }
-        // Read value
-        ss >> value;
+    int64_t processed = 0;
 
-        // Write coordinates and value to binary
+    while (std::getline(fin, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        
+        std::stringstream ss(line);
+        for (int d = 0; d < rank; ++d) {
+            if (!(ss >> coords[d])) {
+                std::cerr << "Error parsing coordinate at line " << processed + 1 << std::endl;
+            }
+        }
+        if (!(ss >> value)) {
+            // Some tensors have no value; default to 1.0 if missing
+            value = static_cast<T>(1);
+        }
+
+        // Write [coords][value]
         fout.write(reinterpret_cast<const char*>(coords.data()), rank * sizeof(int32_t));
         fout.write(reinterpret_cast<const char*>(&value), sizeof(T));
+        
+        processed++;
+        if (processed % 1000000 == 0) {
+            std::cout << "\rProgress: " << (processed * 100 / nnz) << "%" << std::flush;
+        }
     }
 
+    std::cout << "\nDone. Converted " << processed << " entries.\n";
     fin.close();
     fout.close();
-
-    std::cout << "Successfully converted " << nnz << " entries (Rank " << rank << ") to " << outputFile << "\n";
 }
 
 // =====================

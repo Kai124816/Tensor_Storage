@@ -7,6 +7,7 @@
 #include <chrono>
 #include <omp.h> 
 #include <hip/hip_runtime.h>
+#include <map>
 #include "alto_impl.h"
 
 //======================================================================
@@ -43,7 +44,6 @@ struct BLCO_BLOCK_GPU {
     BLCO_ENTRY<T>* entries;
 };
 
-
 //======================================================================
 // BLCO_Tensor_3D
 //======================================================================
@@ -62,8 +62,7 @@ struct BLCO_BLOCK_GPU {
 template<typename T, typename S>
 class Blco_Tensor : public Alto_Tensor<T, S>
 {
-protected:
-    int blocks_populated; //The number of blocks which are populated    
+protected:   
     bool blocks_needed; //If 64 bits isn't enough to represent all of the indexes properly                 
     std::vector<int> bit_widths; // Bit-widths needed for each mode
     std::vector<int> block_modes; // Modes whose indices are represented by the block number
@@ -180,69 +179,81 @@ protected:
     // Create BLCO tensor (split into blocks if >64 bits)
     //------------------------------------------------------------------
     void create_blco_tensor()
-    {
-        auto p1 = create_intermediate_tensor();
+{
+    auto p1 = create_intermediate_tensor();
 
-        int limit_bits = 0;
-        if constexpr (std::is_same_v<S, __uint128_t>) limit_bits = 1;
+    int limit_bits = 0;
+    if constexpr (std::is_same_v<S, __uint128_t>) limit_bits = 1;
 
-        if (limit_bits) {
-            // If >64 bits needed, split into blocks by upper bits
-            std::vector<std::unordered_map<int, BLCO_BLOCK_CPU<T>>> local_blocks(omp_get_max_threads());
+    if (limit_bits) {
+        // 1. Thread-local accumulation to avoid contention
+        std::vector<std::unordered_map<int, BLCO_BLOCK_CPU<T>>> local_blocks(omp_get_max_threads());
 
-            #pragma omp parallel
-            {
-                int tid = omp_get_thread_num();
-                auto &local_map = local_blocks[tid];
+        #pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            auto &local_map = local_blocks[tid];
 
-                #pragma omp for nowait
-                for (int i = 0; i < static_cast<int>(p1.first.size()); i++) {
-                    int block_num = static_cast<int>(p1.first[i] >> 64);
-                    __uint128_t blco_index = p1.first[i] & 0xFFFFFFFFFFFFFFFF;
-                    T val = p1.second[i];
+            #pragma omp for nowait
+            for (int i = 0; i < static_cast<int>(p1.first.size()); i++) {
+                // Extract upper 64 bits as block number
+                int block_num = static_cast<int>(p1.first[i] >> 64);
+                // Extract lower 64 bits as the local index
+                uint64_t blco_index = static_cast<uint64_t>(p1.first[i] & 0xFFFFFFFFFFFFFFFF);
+                T val = p1.second[i];
 
-                    auto &block = local_map[block_num];
-                    block.block = block_num;
-                    BLCO_ENTRY<T> entry = {static_cast<uint64_t>(blco_index), val};
-                    block.entries.push_back(entry);
-                    block.size++;
-                }
-            }
-
-            // Merge thread-local maps into global blco_tensor
-            for (auto &local_map : local_blocks) {
-                for (auto &[block_num, block] : local_map) {
-                    int result = find_block(block_num);
-                    if (result == -1) {
-                        blco_tensor.push_back(std::move(block));
-                    } else {
-                        auto &dst = blco_tensor[result];
-                        dst.entries.insert(dst.entries.end(), block.entries.begin(), block.entries.end());
-                        dst.size += block.size;
-                    }
-                }
+                auto &block = local_map[block_num];
+                block.block = block_num;
+                block.entries.push_back({blco_index, val});
+                block.size++;
             }
         }
-        else {
-            // If <=64 bits, everything fits in one block
-            BLCO_BLOCK_CPU<T> b1;
-            b1.block = 0;
-            b1.size = p1.first.size();
-            b1.entries.resize(p1.first.size());
 
-            #pragma omp parallel for
-            for (int i = 0; i < static_cast<int>(p1.first.size()); i++) {
-                uint64_t blco_index = static_cast<uint64_t>(p1.first[i]);
-                T val  = p1.second[i];
-                BLCO_ENTRY<T> entry = {blco_index,val};
-                b1.entries[i] = entry;
+        // 2. Merge into a global std::map to handle sorting and uniqueness
+        std::map<int, BLCO_BLOCK_CPU<T>> global_merged_map;
+        for (auto &local_map : local_blocks) {
+            for (auto &[block_num, block] : local_map) {
+                auto &dst = global_merged_map[block_num];
+                if (dst.entries.empty()) {
+                    dst.block = block_num;
+                }
+                dst.entries.insert(dst.entries.end(), block.entries.begin(), block.entries.end());
+                dst.size += block.size;
             }
-            blco_tensor.push_back(std::move(b1));
+        }
+
+        // 3. Transfer from sorted map to the final vector and update tracking
+        blco_tensor.clear();
+        populated_blocks.clear();
+        blco_tensor.reserve(global_merged_map.size());
+        populated_blocks.reserve(global_merged_map.size());
+
+        for (auto &[block_num, block] : global_merged_map) {
+            populated_blocks.push_back(block_num);
+            blco_tensor.push_back(std::move(block));
         }
     }
+    else {
+        // If <= 64 bits, everything fits into a single block at index 0
+        blco_tensor.clear();
+        populated_blocks.clear();
+        
+        BLCO_BLOCK_CPU<T> b1;
+        b1.block = 0;
+        b1.size = static_cast<int>(p1.first.size());
+        b1.entries.resize(p1.first.size());
+
+        #pragma omp parallel for
+        for (int i = 0; i < static_cast<int>(p1.first.size()); i++) {
+            b1.entries[i] = {static_cast<uint64_t>(p1.first[i]), p1.second[i]};
+        }
+        
+        blco_tensor.push_back(std::move(b1));
+        populated_blocks.push_back(0);
+    }
+}
 
 public:
-
     Blco_Tensor(const std::vector<NNZ_Entry<T>>& entry_vec, std::vector<int> dims, int decomp_rank = 10) : 
     Alto_Tensor<T,S>(entry_vec, dims, decomp_rank)
     {
@@ -290,21 +301,10 @@ public:
     //------------------------------------------------------------------
     // Find a block by ID (returns index or -1)
     //------------------------------------------------------------------
-    int find_block(int target_block)
+    int find_block(int target_block) const
     {
-        int low = 0;
-        int high = populated_blocks.size() - 1;
-
-        while (low <= high) {
-            int mid = low + (high - low) / 2;
-
-            if (populated_blocks[mid] == target_block) {
-                return mid; 
-            } else if (populated_blocks[mid] < target_block) {
-                low = mid + 1; 
-            } else {
-                high = mid - 1; 
-            }
+        for(int i = 0; i < blco_tensor.size(); ++i){
+            if (blco_tensor[i].block == target_block) return i;
         }
         return -1;
     }
@@ -314,6 +314,8 @@ public:
     //------------------------------------------------------------------
     const std::vector<BLCO_BLOCK_CPU<T>>& get_blco() const {return blco_tensor;}
     std::vector<uint64_t> get_bitmasks() const {return bitmasks;}
+    int get_num_blocks() const {return populated_blocks.size();}
+    int get_total_bits_needed() const {return std::accumulate(bit_widths.begin(), bit_widths.end(), 0);}
 
     //------------------------------------------------------------------
     // Copy GPU result vector(mathematical vector not c++ vector) 

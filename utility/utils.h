@@ -45,6 +45,11 @@ struct NNZ_Entry {
     T value;
 };
 
+struct MADResult {
+    float median;
+    float mad_sigma; // This is the "robust" standard deviation
+};
+
 // Represents the header of a binary tensor file
 // Note: In the binary file, the 'dims' array should strictly follow this struct.
 struct TensorHeader {
@@ -207,11 +212,21 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor_nd(
 // -----------------------------------------------------------
 // N-Dimensional Binary File Reader
 // -----------------------------------------------------------
-// Read a tensor from a binary file (1-indexed format).
-// Each line: index values
-// Converts to 0-indexed internally.
+/**
+ * Reads a tensor from a binary file consisting ONLY of raw entries.
+ * No header (rank/nnz/dims) is expected in the file.
+ * returns A vector of NNZ_Entry objects (converted to 0-indexed).
+ */
+/**
+ * Reads a tensor from a binary file consisting ONLY of raw entries.
+ * Checks for incomplete "rows" (missing coordinates or values).
+ * * @param filename Path to the binary file.
+ * @param rank The number of dimensions (modes) of the tensor.
+ * @param nnz The number of non-zero entries to read.
+ * @return A vector of NNZ_Entry objects.
+ */
 template<typename T>
-std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, std::vector<int>& out_dims) 
+std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, int rank, int64_t nnz) 
 {
     std::ifstream file(filename, std::ios::binary);
     std::vector<NNZ_Entry<T>> entries;
@@ -221,39 +236,91 @@ std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, s
         return entries;
     }
 
-    // 1. Read Header (Rank + NNZ)
-    // We assume the file starts with: [int32 rank, int64 nnz]
-    int32_t rank;
-    int64_t nnz;
-    file.read(reinterpret_cast<char*>(&rank), sizeof(rank));
-    file.read(reinterpret_cast<char*>(&nnz), sizeof(nnz));
+    // Use reserve to avoid multiple reallocations while allowing for an early exit
+    entries.reserve(nnz);
 
-    // 2. Read Dimensions
-    // The next 'rank' integers are the dimensions
-    out_dims.resize(rank);
-    file.read(reinterpret_cast<char*>(out_dims.data()), rank * sizeof(int32_t));
-
-    // 3. Read Entries
-    entries.resize(nnz);
-    
-    // Calculate entry size: (Rank * 4 bytes) + sizeof(T)
-    size_t coord_size = rank * sizeof(int32_t);
-    size_t val_size = sizeof(T);
-    std::vector<char> buffer(coord_size + val_size);
+    const size_t coords_bytes = rank * sizeof(int32_t);
+    const size_t value_bytes = sizeof(T);
 
     for(size_t i = 0; i < nnz; ++i) {
-        entries[i].coords.resize(rank);
+        NNZ_Entry<T> current_entry;
+        current_entry.coords.resize(rank);
         
-        // Read coordinates directly into the vector's underlying array
-        file.read(reinterpret_cast<char*>(entries[i].coords.data()), rank * sizeof(int32_t));
+        // 1. Try to read the 'rank' coordinates
+        file.read(reinterpret_cast<char*>(current_entry.coords.data()), coords_bytes);
         
-        // Read the value directly into the value member
-        file.read(reinterpret_cast<char*>(&entries[i].value), sizeof(T));
+        // Check if we managed to read all 'rank' coordinates
+        if (file.gcount() < static_cast<std::streamsize>(coords_bytes)) {
+            std::cerr << "Error: Entry #" << i << " is incomplete. "
+                      << "Expected " << rank << " coordinates, but only found " 
+                      << (file.gcount() / sizeof(int32_t)) << " indices." << std::endl;
+            break; 
+        }
         
-        for(auto& c : entries[i].coords) c -= 1; 
+        // 2. Try to read the '1' value
+        file.read(reinterpret_cast<char*>(&current_entry.value), value_bytes);
+        
+        // Check if we managed to read the value associated with those coordinates
+        if (file.gcount() < static_cast<std::streamsize>(value_bytes)) {
+            std::cerr << "Error: Entry #" << i << " is incomplete. "
+                      << "Read " << rank << " coordinates, but the value is missing." << std::endl;
+            break;
+        }
+        
+        // Convert from 1-indexed to 0-indexed
+        for(auto& c : current_entry.coords) {
+            c -= 1; 
+        }
+
+        entries.push_back(std::move(current_entry));
+    }
+
+    if (entries.size() < static_cast<size_t>(nnz)) {
+        std::cerr << "Warning: Only " << entries.size() << " full entries were read out of " 
+                  << nnz << " requested." << std::endl;
     }
 
     return entries;
+}
+
+/**
+ * Filters the entry vector to remove any non-zeros with out-of-bounds coordinates.
+ * Assumes entry_vec is already 0-indexed.
+ * * @param entry_vec The vector of sparse entries to be cleaned.
+ * @param dims The maximum dimensions for each mode.
+ */
+template<typename T>
+void filter_invalid_entries(std::vector<NNZ_Entry<T>>& entry_vec, const std::vector<int>& dims) {
+    if (entry_vec.empty() || dims.empty()) return;
+
+    size_t initial_size = entry_vec.size();
+    int rank = static_cast<int>(dims.size());
+
+    // std::remove_if moves "invalid" entries to the end of the vector
+    auto new_end = std::remove_if(entry_vec.begin(), entry_vec.end(), [&](const NNZ_Entry<T>& entry) {
+        // Check if the entry has the correct number of dimensions
+        if (entry.coords.size() != static_cast<size_t>(rank)) {
+            return true; 
+        }
+
+        // Check bounds for each mode
+        for (int i = 0; i < rank; ++i) {
+            if (entry.coords[i] < 0 || entry.coords[i] >= dims[i]) {
+                return true; // Mark for removal
+            }
+        }
+        
+        return false; // Keep this entry
+    });
+
+    // Actually shrink the vector size
+    entry_vec.erase(new_end, entry_vec.end());
+
+    size_t removed_count = initial_size - entry_vec.size();
+    if (removed_count > 0) {
+        std::cout << "[Validation] Removed " << removed_count 
+                  << " entries with out-of-bounds indices." << std::endl;
+    }
 }
 
 // Check if entry exists (N-dimensional)
@@ -265,6 +332,67 @@ bool find_entry(const std::vector<NNZ_Entry<T>>& entry_vec, const std::vector<in
         }
     }
     return false;
+}
+
+/**
+ * N-Dimensional Binary Search with Optional Masking (-1)
+ * Requires: entry_vec must be sorted by coords initially.
+ * If remove is true, found value is set to 0.
+ */
+template<typename T>
+bool find_entry_binary(std::vector<NNZ_Entry<T>>& entry_vec, const std::vector<int>& target_coords, T val, bool mask = false) {
+    if (entry_vec.empty()) return false;
+
+    // Use lower_bound for O(log N) search on coords
+    auto it = std::lower_bound(entry_vec.begin(), entry_vec.end(), target_coords, 
+        [](const NNZ_Entry<T>& entry, const std::vector<int>& target) {
+            return entry.coords < target;
+        });
+
+    // Verify coordinates match and the current value matches the search target
+    if (it != entry_vec.end() && it->coords == target_coords && it->value == val) {
+        if (mask) {
+            it->value = T(0); // Maintain sort order by leaving coords alone
+        }
+        return true;
+    }
+
+    return false;
+}
+
+// Print the max and min indices for each mode
+// Used to check if the .bin file was parsed correctly
+template<typename T>
+void print_tensor_stats(const std::vector<NNZ_Entry<T>>& entry_vec) {
+    if (entry_vec.empty()) {
+        std::cout << "Tensor is empty (0 non-zeros)." << std::endl;
+        return;
+    }
+
+    // Determine rank from the first entry
+    int rank = entry_vec[0].coords.size();
+    
+    // Initialize min/max vectors with the coordinates of the first entry
+    std::vector<int> min_indices = entry_vec[0].coords;
+    std::vector<int> max_indices = entry_vec[0].coords;
+
+    // Iterate through all entries to find bounds
+    for (const auto& entry : entry_vec) {
+        for (int i = 0; i < rank; ++i) {
+            if (entry.coords[i] < min_indices[i]) min_indices[i] = entry.coords[i];
+            if (entry.coords[i] > max_indices[i]) max_indices[i] = entry.coords[i];
+        }
+    }
+
+    // Output results
+    std::cout << "========================================" << std::endl;
+    std::cout << "Tensor Index Statistics (Internal 0-indexed)" << std::endl;
+    std::cout << "Total NNZ: " << entry_vec.size() << std::endl;
+    for (int i = 0; i < rank; ++i) {
+        std::cout << "  Mode " << (i + 1) << ": Min Index = " << min_indices[i] 
+                  << ", Max Index = " << max_indices[i] << std::endl;
+    }
+    std::cout << "========================================" << std::endl;
 }
 
 /**
@@ -402,22 +530,90 @@ void print_differences_to_file(const T* m1, const T* m2, size_t rows, size_t col
     // Set formatting
     outfile << std::fixed << std::setprecision(precision);
     
-    // Write matrix
+    // Write matrix (terminate early if there are too many differences)
+    int line_count = 0;
+    bool terminated_early = false;
     for (size_t i = 0; i < rows; i++) {
+        if (line_count > 10000){
+            terminated_early = true;
+            break;
+        }
         for (size_t j = 0; j < cols; j++) {
             size_t idx = i * cols + j;  // Row-major indexing
             if(m1[idx] != m2[idx]){
                 outfile << m1_name << " val: " << m1[idx] << ", " << m2_name << " val: " << m2[idx] 
                 << " at idx (" << i << ", " << j << ")\n";
+                line_count ++;
             }
         }
     }
+    if(terminated_early) outfile << "\n couldn't write all of the differences to outfile";
     outfile << "\n\n"; 
     
     outfile.close();
     std::cout << "Differences written to " << filename 
               << " (" << rows << "x" << cols << ")\n";
     
+}
+
+template<typename T>
+void print_differences_to_file_float(const T* m1, const T* m2, size_t rows, size_t cols, 
+                               const std::string& filename, const std::string& m1_name,
+                               const std::string& m2_name, T epsilon = 1e-4, 
+                               int precision = 6, int width = 12) {
+    std::ofstream outfile(filename, std::ios::app);
+    
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+    
+    outfile << "Comparing " << m1_name << " and " << m2_name << " (" << rows << "x" << cols << ")\n";
+    outfile << "Threshold (Epsilon): " << epsilon << "\n";
+    outfile << std::fixed << std::setprecision(precision);
+    
+    size_t diff_count = 0;
+    size_t max_logs = 1000; // Prevent the file from becoming multi-gigabyte
+
+    for (size_t i = 0; i < rows; i++) {
+        for (size_t j = 0; j < cols; j++) {
+            size_t idx = i * cols + j;
+            T val1 = m1[idx];
+            T val2 = m2[idx];
+            
+            // Calculate Absolute Difference
+            T abs_diff = std::abs(val1 - val2);
+            
+            // Calculate Relative Difference (avoid division by zero)
+            T max_val = std::max(std::abs(val1), std::abs(val2));
+            T rel_diff = (max_val > 0) ? (abs_diff / max_val) : 0;
+
+            // Trigger if absolute OR relative error is too high
+            if (abs_diff > epsilon && rel_diff > epsilon) {
+                diff_count++;
+                if (diff_count <= max_logs) {
+                    outfile << "Mismatch at (" << std::setw(6) << i << ", " << std::setw(3) << j << ") | "
+                            << m1_name << ": " << std::setw(width) << val1 << " | "
+                            << m2_name << ": " << std::setw(width) << val2 << " | "
+                            << "Abs Diff: " << abs_diff << "\n";
+                }
+            }
+        }
+    }
+
+    if (diff_count > max_logs) {
+        outfile << "... and " << (diff_count - max_logs) << " more differences omitted.\n";
+    }
+
+    outfile << "Total Mismatches: " << diff_count << "\n";
+    outfile << "--------------------------------------------------------\n\n";
+    outfile.close();
+
+    if (diff_count > 0) {
+        std::cout << "[Warning] Found " << diff_count << " differences. Details written to " << filename << std::endl;
+    } else {
+        std::cout << "[Success] No significant differences found between " << m1_name << " and " << m2_name << std::endl;
+    }
 }
 
 // --- Array Utilities ---
@@ -454,9 +650,18 @@ double compare_arrays_float(T* a1, T* a2, int size) {
 // Print all entries in a sparse tensor
 template<typename T>
 void print_entry_vec(const std::vector<NNZ_Entry<T>>& entry_vec) {
+    if(entry_vec.size() == 0){
+        std::cerr << "empty entry vec\n";
+        return;
+    }
+    if(entry_vec[0].coords.size() > 7){
+        std::cerr << "Does not accept more than seven dimensions\n";
+        return; 
+    }
+    std::vector<std::string> modes = {"one", "two", "three", "four", "five", "six", "seven"};
     for (size_t i = 0; i < entry_vec.size(); ++i) {
         for(int j = 0; j < entry_vec[i].coords.size(); j++){
-            std::cout << "mode " << j + 1 << " idx: " << entry_vec[i].coords[j] << " ";
+            std::cout << "mode " << modes[j] << " idx: " << entry_vec[i].coords[j] << ", ";
         }
         std::cout << "val: " << entry_vec[i].value << "\n";
     }
@@ -557,48 +762,112 @@ StatsResult calculate_statistics(const std::vector<float>& data) {
     return {mean, std::sqrt(static_cast<float>(variance))};
 }
 
+
+std::vector<float> clean_data(const std::vector<float>& data, StatsResult stats) {
+
+    float mean = stats.mean;
+    float sd = stats.std_dev;
+
+    std::vector<float> new_data;
+
+    // Pre-calculate threshold
+    float thresh = 4.0f * sd;
+
+    for (const float& val : data) {
+        float diff = std::abs(val - mean);
+
+        // Check 4 SD
+        if (diff < thresh) {
+            new_data.push_back(val);
+        }
+    }
+
+    return new_data;
+}
+
+/**
+ * Robustly filters outliers from MTTKRP runtimes using Median Absolute Deviation.
+ * @param data The input timing data.
+ * @param sigma_threshold Number of MAD-sigmas to allow (default 4.0).
+ * @param epsilon Absolute difference floor to ignore micro-jitter.
+ * @return A vector containing the "clean" runtimes.
+ */
+std::vector<float> clean_data_mad(const std::vector<float>& data, float sigma_threshold = 4.0f, float epsilon = 0.005f) {
+    if (data.empty()) return {};
+    if (data.size() == 1) return data;
+
+    // 1. Find the Median
+    std::vector<float> sorted_data = data;
+    size_t n = sorted_data.size();
+    std::sort(sorted_data.begin(), sorted_data.end());
+    
+    float median = (n % 2 == 0) ? (sorted_data[n/2 - 1] + sorted_data[n/2]) / 2.0f : sorted_data[n/2];
+
+    // 2. Calculate Absolute Deviations from Median
+    std::vector<float> deviations;
+    deviations.reserve(n);
+    for (float val : data) {
+        deviations.push_back(std::abs(val - median));
+    }
+
+    // 3. Find the Median of Absolute Deviations (MAD)
+    std::sort(deviations.begin(), deviations.end());
+    float mad = (n % 2 == 0) ? (deviations[n/2 - 1] + deviations[n/2]) / 2.0f : deviations[n/2];
+
+    // 4. Calculate the Robust Sigma (MAD * Consistency Factor)
+    // 1.4826 makes MAD equivalent to SD for normal distributions
+    float robust_sigma = mad * 1.4826f;
+    
+    // 5. Define the threshold
+    // We add epsilon to prevent flagging nanosecond jitter when sigma is tiny
+    float thresh = sigma_threshold * robust_sigma;
+
+    std::vector<float> new_data;
+    new_data.reserve(n);
+
+    for (const float& val : data) {
+        float diff = std::abs(val - median);
+
+        // Keep data if it's within the statistical threshold
+        // OR if the total difference is smaller than our absolute noise floor (epsilon)
+        if (diff <= thresh || diff <= epsilon) {
+            new_data.push_back(val);
+        }
+    }
+
+    return new_data;
+}
+
 /**
  * Calculates the count of anomalies at 3, 4, and 5 standard deviations.
  * The input dataset
  * The pre-calculated mean and standard deviation
  * A map where keys are {3, 4, 5} and values are the count of anomalies
  */
-
-std::unordered_map<int, int> find_anomalies(const std::vector<float>& data, StatsResult stats) {
-    // Initialize map with 0 counts for our specific keys
+std::unordered_map<int, int> find_anomalies(const std::vector<float>& latencies, StatsResult stats, float min_meaningful_ms = 0.005f) // e.g., ignore anything smaller than 5 microseconds 
+{
     std::unordered_map<int, int> anomaly_counts = {{3, 0}, {4, 0}, {5, 0}};
     
-    if (stats.std_dev <= 0.0f) {
-        return anomaly_counts; 
-    }
+    // If SD is zero, there are no statistical anomalies
+    if (stats.std_dev <= 0.0f) return anomaly_counts;
 
     float mean = stats.mean;
     float sd = stats.std_dev;
 
-    // Pre-calculate thresholds to avoid repeated multiplication in the loop
-    float thresh3 = 3.0f * sd;
-    float thresh4 = 4.0f * sd;
-    float thresh5 = 5.0f * sd;
-
-    for (const float& val : data) {
+    for (const float& val : latencies) {
         float diff = std::abs(val - mean);
 
-        // Check 3 SD
-        if (diff > thresh3) {
+        // Only count if it's statistically significant AND physically meaningful
+        if (diff > (3.0f * sd) && diff > min_meaningful_ms) {
             anomaly_counts[3]++;
-            
-            // Check 4 SD
-            if (diff > thresh4) {
+            if (diff > (4.0f * sd)) {
                 anomaly_counts[4]++;
-                
-                // Check 5 SD
-                if (diff > thresh5) {
+                if (diff > (5.0f * sd)) {
                     anomaly_counts[5]++;
                 }
             }
         }
     }
-
     return anomaly_counts;
 }
 
@@ -620,6 +889,55 @@ double binomialProbability(int n, int k, double p) {
     double nCr = binomialCoefficient(n, k);
     double prob = nCr * std::pow(p, k) * std::pow(1.0 - p, n - k);
     return prob;
+}
+
+MADResult calculate_mad(std::vector<float> data) {
+    if (data.empty()) return {0.0f, 0.0f};
+
+    // 1. Calculate Median
+    size_t n = data.size();
+    std::sort(data.begin(), data.end());
+    float median = (n % 2 == 0) ? (data[n/2 - 1] + data[n/2]) / 2.0f : data[n/2];
+
+    // 2. Calculate Absolute Deviations
+    std::vector<float> deviations;
+    deviations.reserve(n);
+    for (float val : data) {
+        deviations.push_back(std::abs(val - median));
+    }
+
+    // 3. Calculate Median of Deviations (MAD)
+    std::sort(deviations.begin(), deviations.end());
+    float mad = (n % 2 == 0) ? (deviations[n/2 - 1] + deviations[n/2]) / 2.0f : deviations[n/2];
+
+    // 4. Convert to a "Normal-equivalent" Sigma
+    // 1.4826 is the scale factor for normal distribution consistency
+    return {median, mad * 1.4826f};
+}
+
+std::unordered_map<int, int> find_anomalies_mad(const std::vector<float>& data, MADResult res, float epsilon = 0.005f) {
+    std::unordered_map<int, int> anomaly_counts = {{3, 0}, {4, 0}, {5, 0}};
+
+    float thresh3 = 3.0f * res.mad_sigma;
+    float thresh4 = 4.0f * res.mad_sigma;
+    float thresh5 = 5.0f * res.mad_sigma;
+
+    for (const float& val : data) {
+        float diff = std::abs(val - res.median);
+
+        // Apply both the statistical threshold (MAD) and the absolute threshold (epsilon)
+        if (diff > thresh3 && diff > epsilon) {
+            anomaly_counts[3]++;
+            if (diff > thresh4) {
+                anomaly_counts[4]++;
+                if (diff > thresh5) {
+                    anomaly_counts[5]++;
+                }
+            }
+        }
+    }
+
+    return anomaly_counts;
 }
 
 #endif

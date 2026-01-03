@@ -123,7 +123,8 @@ protected:
                 }
             } 
             else {
-                std::uniform_real_distribution<T> dist(0.0, 1.0);
+                // Generate integers from 0 to 1024
+                std::uniform_int_distribution<int> dist(0, 3);
             
                 #pragma omp parallel
                 {
@@ -132,7 +133,8 @@ protected:
                     for (int i = 0; i < rows; ++i) {
                         T* row_ptr = &matrix[i * cols];
                         for (int j = 0; j < cols; ++j) {
-                            row_ptr[j] = dist(gen_local);
+                            // Dividing by 1024.0 is perfectly precise in binary
+                            row_ptr[j] = static_cast<T>(dist(gen_local));
                         }
                     }
                 }

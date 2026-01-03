@@ -51,14 +51,14 @@ tests/mttkrp_tests/rocprof_output/
 # ===== Directory with helper files =====
 utility/personal_utils/
 
-# ===== Directory with output files =====
+# ===== Directory and files with output files =====
 /output/
+output.txt/
 
 # ===== CMake =====
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-Makefile
 Makefile.in
 install_manifest.txt
 compile_commands.json

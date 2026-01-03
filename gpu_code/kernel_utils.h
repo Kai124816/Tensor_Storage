@@ -8,9 +8,28 @@
 #define HIP_CHECK(cmd) do { hipError_t e = (cmd); if (e != hipSuccess) { \
     fprintf(stderr,"HIP ERROR %s:%d: %s\n", __FILE__, __LINE__, hipGetErrorString(e)); exit(EXIT_FAILURE);} } while(0)
 
+
+//======================================================================
+// Structs
+//======================================================================
+template<typename T>
+struct MTTKRP_Device_Resources {
+    BLCO_BLOCK_GPU<T>* d_tensor;
+    std::vector<T*> d_fmats; // Holds pointers for N modes
+    int rank_dims;           // Number of modes (N)
+};
+
+template<typename T>
+struct BLCO_CSR_GPU {
+    BLCO_ENTRY<T>* tensor_entries;
+    int offset; //Starting block in the array
+    uint64_t* block_ptr;  // The "CSR-like" pointer array
+};
+
 //======================================================================
 // Functions that get information about the GPU
 //======================================================================
+
 //Get maximum shared memory
 inline size_t get_max_shared_memory() {
     int deviceId;
@@ -82,18 +101,110 @@ inline void print_amd_gpu_model() {
     }
 }
 
-//-----------------------------------------------
-// Helper function for reporting HIP errors
-//-----------------------------------------------
-inline void checkHIP(const hipError_t e, const char* where) {
-    if (e != hipSuccess) {
-        std::cerr << where << " failed: " << hipGetErrorString(e) << "\n";
+//======================================================================
+// CSR Blocks Functions
+//======================================================================
+template<typename T, typename S>
+void allocate_and_copy_BLCO_to_GPU(const Blco_Tensor<T, S>& host_tensor, BLCO_CSR_GPU<T>& gpu_struct) {
+    const std::vector<BLCO_BLOCK_CPU<T>>& blco = host_tensor.get_blco();
+    uint64_t total_nnz = host_tensor.get_nnz();
+    
+    if (blco.empty()) return;
+
+    int first_block = blco.front().block;
+    int last_block = blco.back().block;
+    int range = last_block - first_block + 1; // e.g., blocks 5 to 7 is 3 blocks
+
+    gpu_struct.offset = first_block;
+    
+    // 1. Allocate GPU memory
+    HIP_CHECK(hipMalloc(&gpu_struct.tensor_entries, total_nnz * sizeof(BLCO_ENTRY<T>)));
+    HIP_CHECK(hipMalloc(&gpu_struct.block_ptr, (range + 1) * sizeof(uint64_t)));
+
+    // 2. Prepare Host buffers for SINGLE-SHOT transfer
+    std::vector<uint64_t> h_block_ptr(range + 1, 0);
+    std::vector<BLCO_ENTRY<T>> h_flat_entries;
+    h_flat_entries.reserve(total_nnz);
+
+    // 3. One-pass through the BLCO data
+    uint64_t current_offset = 0;
+    int blco_idx = 0;
+
+    for (int i = 0; i < range; ++i) {
+        int current_block_id = first_block + i;
+        h_block_ptr[i] = current_offset;
+
+        // If this block exists in our sparse data
+        if (blco_idx < blco.size() && blco[blco_idx].block == current_block_id) {
+            const auto& block = blco[blco_idx];
+            h_flat_entries.insert(h_flat_entries.end(), block.entries.begin(), block.entries.end());
+            current_offset += block.size;
+            blco_idx++;
+        }
     }
+    h_block_ptr[range] = current_offset; // Final boundary
+
+    // 4. Perform only TWO transfers instead of thousands
+    HIP_CHECK(hipMemcpy(gpu_struct.tensor_entries, h_flat_entries.data(), 
+                        total_nnz * sizeof(BLCO_ENTRY<T>), hipMemcpyHostToDevice));
+                        
+    HIP_CHECK(hipMemcpy(gpu_struct.block_ptr, h_block_ptr.data(), 
+                        (range + 1) * sizeof(uint64_t), hipMemcpyHostToDevice));
+}
+//======================================================================
+// Memory allocation and deallocation functions
+//======================================================================
+
+// Generic N-Dimensional Allocation and Transfer
+template<typename T, typename S>
+inline MTTKRP_Device_Resources<T> allocate_mttkrp_resources(const Blco_Tensor<T,S>& sparse_tensor) {
+    MTTKRP_Device_Resources<T> res;
+    
+    const std::vector<BLCO_BLOCK_CPU<T>> blco_tensor = sparse_tensor.get_blco();
+    const std::vector<int> dims = sparse_tensor.get_dims();
+    const int factor_rank = sparse_tensor.get_factor_rank(); // Decomposition rank (R)
+    const std::vector<T*> h_fmats = sparse_tensor.get_fmats();
+    
+    res.rank_dims = dims.size(); // N modes
+    int num_blocks = blco_tensor.size();
+
+    // 1. Allocate and transfer the BLCO Tensor blocks
+    HIP_CHECK(hipMalloc(&res.d_tensor, sizeof(BLCO_BLOCK_GPU<T>) * num_blocks));
+    blocks_to_gpu(res.d_tensor, blco_tensor, num_blocks);
+
+    // 2. Allocate and transfer each Factor Matrix (Modes 1 to N)
+    res.d_fmats.resize(res.rank_dims);
+    for (int i = 0; i < res.rank_dims; ++i) {
+        size_t fmat_size = static_cast<size_t>(dims[i]) * factor_rank;
+        
+        HIP_CHECK(hipMalloc(&res.d_fmats[i], sizeof(T) * fmat_size));
+        
+        // Copy the initial factor matrix data from host to device
+        HIP_CHECK(hipMemcpy(res.d_fmats[i], h_fmats[i], 
+                            sizeof(T) * fmat_size, hipMemcpyHostToDevice));
+    }
+
+    return res;
 }
 
-//======================================================================
+// Generic N-Dimensional Deallocation
+template<typename T>
+inline void deallocate_mttkrp_resources(MTTKRP_Device_Resources<T>& res, int num_blocks) {
+    // Free BLCO blocks from GPU
+    if (res.d_tensor) {
+        free_blocks_from_gpu(res.d_tensor, num_blocks);
+    }
+
+    // Free all N factor matrices
+    for (int i = 0; i < res.rank_dims; ++i) {
+        if (res.d_fmats[i]) {
+            HIP_CHECK(hipFree(res.d_fmats[i]));
+        }
+    }
+    res.d_fmats.clear();
+}
+
 // Move BLCO tensor blocks from CPU to GPU memory
-//======================================================================
 template<typename T>
 inline void blocks_to_gpu(BLCO_BLOCK_GPU<T>*& d_block_arr,
                    const std::vector<BLCO_BLOCK_CPU<T>>& tensor,
@@ -134,9 +245,7 @@ inline void blocks_to_gpu(BLCO_BLOCK_GPU<T>*& d_block_arr,
               hipMemcpyHostToDevice));
 }
 
-//======================================================================
 // Free BLCO tensor blocks from GPU memory
-//======================================================================
 template<typename T>
 inline void free_blocks_from_gpu(BLCO_BLOCK_GPU<T>* gpu_block_arr, int num_blocks)
 {
@@ -162,45 +271,27 @@ inline void free_blocks_from_gpu(BLCO_BLOCK_GPU<T>* gpu_block_arr, int num_block
 // ----------------------------
 
 // Compute grid/block dimensions when NOT using shared memory (smem).
-// Decides how many thread blocks (dims.first) and how many threads per block (dims.second)
-// should be launched based on the number of nonzeros and a default wavefront size.
-//
-// Strategy: 
-//  - If the tensor is small (≤ 320 nonzeros), launch just 1 block with enough threads
-//    to cover all nonzeros, rounded up to a multiple of wf_sz.
-//  - Otherwise, assign 320 threads per block and compute how many blocks are needed.
 inline std::pair<int,int> determine_dimensions_no_smem(uint64_t non_zeros, int wf_sz = 64)
 {
     std::pair<int,int> dims;
 
-    if(non_zeros <= 320){
+    if(non_zeros <= 768){
         dims.first = 1;  // only one block
         int mul = non_zeros / wf_sz;
         if(mul * wf_sz < non_zeros) mul++;  // round up to next multiple of wf_sz
         dims.second = wf_sz * mul;          // threads per block
     }
     else{
-        dims.first = non_zeros / 320;       // number of blocks
-        if(non_zeros % 320 != 0) dims.first++;
-        dims.second = 320;                  // threads per block fixed at 320
+        dims.first = non_zeros / 768;       // number of blocks
+        if(non_zeros % 768 != 0) dims.first++;
+        dims.second = 768;                  // threads per block fixed at 320
     }
 
     return dims;
 }
 
 // Compute grid/block dimensions when using shared memory (smem).
-// Adds an extra check to ensure the shared memory requirement fits within MAX_SHARED_MEM.
-//
-// Parameters:
-//   - non_zeros: number of nonzero entries in tensor
-//   - ui: number of unique target indices per wavefront
-//   - tensor_rank: rank (width) of the factor matrices
-//   - wf_sz: wavefront size (default 64 on AMD GPUs)
-//
-// Logic:
-//  - Similar to above, but with a max threads-per-block of 1024.
-//  - Check whether smem usage (ui * rank * wf_per_block * sizeof(T)) fits within GPU limits.
-//  - If not, reduce wf_per_block until memory fits.
+// Adds an extra check to ensure the shared memory requirements are met
 template<typename T>
 inline std::pair<int,int> determine_dimensions_smem(uint64_t non_zeros, int ui, int tensor_rank, int wf_sz = 64)
 {
@@ -275,38 +366,66 @@ __device__ inline BLCO_ENTRY<T> extract_entry(BLCO_BLOCK_GPU<T>* tensor, int num
     return BLCO_ENTRY<T>{0,0}; // invalid just return empty entry
 }
 
+//Find the block in the CSR format
+__device__ inline int find_block_csr(uint64_t* block_ptr, int block_offset, int global_idx, int num_blocks) 
+{
+    int low = 0;
+    int high = num_blocks;
+    int result_block = 0;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        
+        // Check if the NNZ index falls within this block
+        // block_ptr[mid] is the start, block_ptr[mid+1] is the end
+        if (block_ptr[mid] <= global_idx) {
+            result_block = mid;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    return result_block + block_offset;
+}
+
 // Extract mode-specific index from a linearized index.
 // Uses masks and shifts to recover the appropriate mode coordinate.
 // Handles overflow cases when row+col+depth bits exceed 64 (needs block info).
 __device__ inline int extract_mode(uint64_t linear_idx, int mode, 
     const uint64_t* bitmasks, const int* bit_widths, int rank, int block)
 {
-    // Compute total shift by summing bit widths of all previous modes
+    // 1. Corrected shift calculation (summing widths of modes 0 to mode-1)
     int shift = 0;
     for (int m = 0; m < mode - 1; m++) {
         shift += bit_widths[m];
     }
 
-    // Extract using mask and shift
+    int width = bit_widths[mode - 1];
     uint64_t mask = bitmasks[mode - 1];
-    uint64_t output = (linear_idx >> shift) & mask;
+    uint64_t output = 0;
 
-    // Handle 64-bit overflow case (rare but possible for very large tensors)
-    int total_bits = 0;
-    for (int m = 0; m < rank; m++) total_bits += bit_widths[m];
+    int mode_start = shift;
+    int mode_end = shift + width;
 
-    if (total_bits > 64) {
-        // If this mode extends beyond 64 bits, use block info to reconstruct high bits
-        int extra_bits = total_bits - 64;
-
-        // Compute how many bits this mode contributes beyond 64
-        int mode_start = shift;
-        int mode_end = shift + bit_widths[mode - 1];
-
-        if (mode_end > 64) {
-            int overlap_bits = mode_end - 64;
-            output |= static_cast<uint64_t>(block) << (bit_widths[mode - 1] - overlap_bits);
-        }
+    // Case A: Mode is entirely within the first 64 bits (linear_idx)
+    if (mode_end <= 64) {
+        output = (linear_idx >> mode_start) & mask;
+    }
+    // Case B: Mode is entirely within the high bits (block)
+    else if (mode_start >= 64) {
+        output = (static_cast<uint64_t>(block) >> (mode_start - 64)) & mask;
+    }
+    // Case C: Mode straddles the 64-bit boundary
+    else {
+        int low_bits_count = 64 - mode_start;
+        int high_bits_count = width - low_bits_count;
+        
+        uint64_t low_part = (linear_idx >> mode_start); 
+        uint64_t high_part = (static_cast<uint64_t>(block) & ((1ULL << high_bits_count) - 1));
+        
+        output = low_part | (high_part << low_bits_count);
+        output &= mask; // Ensure we only keep the bits for this mode
     }
 
     return static_cast<int>(output);
