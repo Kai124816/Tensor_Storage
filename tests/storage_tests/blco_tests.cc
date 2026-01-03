@@ -3,16 +3,28 @@
 
 //Generates a random blco tensor based on your parameters and tests encoding
 template<typename T, typename S>
-void test_blco_tensor(int nnz, int rank, std::vector<int> dims)
+void test_blco_tensor(std::string filename, int nnz, int rank, std::vector<int> dims)
 {
     std::cout << "Testing BLCO tensor\n";
     std::cout << "Tensor info ...\n" << "Rank " << rank << 
     "\n" << "Non Zero Entries " << nnz << "\n\n";
 
-    int min_dim = *(std::min_element(dims.begin(), dims.end()));
-    int block_size = (0.05 * min_dim) + 1;
-    int max_blocks = (nnz + block_size - 1) / block_size;
-    std::vector<NNZ_Entry<T>> test_vec = generate_block_sparse_tensor_nd<T>(dims,nnz,0,100,block_size,max_blocks);
+    std::vector<NNZ_Entry<T>> test_vec;
+    if(filename == "-none")
+    {
+        int min_dim = *(std::min_element(dims.begin(), dims.end()));
+        int block_size = (0.05 * min_dim) + 1;
+        int max_blocks = (nnz + block_size - 1) / block_size;
+        test_vec = generate_block_sparse_tensor_nd<T>(dims,nnz,0,100,block_size,max_blocks);
+    }
+    else test_vec = read_tensor_file_binary<T>(filename, rank, nnz);
+
+    std::sort(test_vec.begin(), test_vec.end(), [](const NNZ_Entry<T>& a, const NNZ_Entry<T>& b) {
+        return std::lexicographical_compare(
+            a.coords.begin(), a.coords.end(),
+            b.coords.begin(), b.coords.end()
+        );
+    });
 
     Blco_Tensor<T,S> blco(test_vec,dims);
 
@@ -32,7 +44,6 @@ void test_blco_tensor(int nnz, int rank, std::vector<int> dims)
     const std::vector<BLCO_BLOCK_CPU<T>> blco_indexes = blco.get_blco();
 
     int not_found = 0;
-    std::vector<std::vector<int>> visited;
     for(int i = 0; i < blco_indexes.size(); i++){
         BLCO_BLOCK_CPU<T> block = blco_indexes[i];
         int block_idx = block.block;
@@ -44,10 +55,8 @@ void test_blco_tensor(int nnz, int rank, std::vector<int> dims)
             }
 
             T val = blco_indexes[i].entries[j].value;
-            bool found = find_entry(test_vec, decoded_dims, val);
-            auto it = std::find(visited.begin(), visited.end(), decoded_dims);
-            if(!find_entry(test_vec, decoded_dims, val) || it != visited.end()) not_found++;
-            else visited.push_back(decoded_dims);
+            bool found = find_entry_binary(test_vec, decoded_dims, val, true);
+            if(!found) not_found++;
         }
     }
     
@@ -74,63 +83,64 @@ void run_multiple_tests()
     std::vector<int> dims_7_s = {100,100,100,100,100,100,100};
     std::vector<int> dims_7_l = {512,512,512,512,512,512,512};
 
-    test_blco_tensor<int,uint64_t>(100, 3, dims_3_s);
-    test_blco_tensor<int,__uint128_t>(100, 3, dims_3_l);
-    test_blco_tensor<int,uint64_t>(100, 4, dims_4_s);
-    test_blco_tensor<int,__uint128_t>(100, 4, dims_4_l);
-    test_blco_tensor<int,uint64_t>(100, 5, dims_5_s);
-    test_blco_tensor<int,__uint128_t>(100, 5, dims_5_l);
-    test_blco_tensor<int,uint64_t>(100, 6, dims_6_s);
-    test_blco_tensor<int,__uint128_t>(100, 6, dims_6_l);
-    test_blco_tensor<int,uint64_t>(100, 7, dims_7_s);
-    test_blco_tensor<int,__uint128_t>(100, 7, dims_7_l);
+    test_blco_tensor<int,uint64_t>("-none", 100, 3, dims_3_s);
+    test_blco_tensor<int,__uint128_t>("-none", 100, 3, dims_3_l);
+    test_blco_tensor<int,uint64_t>("-none", 100, 4, dims_4_s);
+    test_blco_tensor<int,__uint128_t>("-none", 100, 4, dims_4_l);
+    test_blco_tensor<int,uint64_t>("-none", 100, 5, dims_5_s);
+    test_blco_tensor<int,__uint128_t>("-none", 100, 5, dims_5_l);
+    test_blco_tensor<int,uint64_t>("-none", 100, 6, dims_6_s);
+    test_blco_tensor<int,__uint128_t>("-none", 100, 6, dims_6_l);
+    test_blco_tensor<int,uint64_t>("-none", 100, 7, dims_7_s);
+    test_blco_tensor<int,__uint128_t>("-none", 100, 7, dims_7_l);
 
-    test_blco_tensor<float,uint64_t>(100, 3, dims_3_s);
-    test_blco_tensor<float,__uint128_t>(100, 3, dims_3_l);
-    test_blco_tensor<float,uint64_t>(100, 4, dims_4_s);
-    test_blco_tensor<float,__uint128_t>(100, 4, dims_4_l);
-    test_blco_tensor<float,uint64_t>(100, 5, dims_5_s);
-    test_blco_tensor<float,__uint128_t>(100, 5, dims_5_l);
-    test_blco_tensor<float,uint64_t>(100, 6, dims_6_s);
-    test_blco_tensor<float,__uint128_t>(100, 6, dims_6_l);
-    test_blco_tensor<float,uint64_t>(100, 7, dims_7_s);
-    test_blco_tensor<float,__uint128_t>(100, 7, dims_7_l);
+    test_blco_tensor<float,uint64_t>("-none", 100, 3, dims_3_s);
+    test_blco_tensor<float,__uint128_t>("-none", 100, 3, dims_3_l);
+    test_blco_tensor<float,uint64_t>("-none", 100, 4, dims_4_s);
+    test_blco_tensor<float,__uint128_t>("-none", 100, 4, dims_4_l);
+    test_blco_tensor<float,uint64_t>("-none", 100, 5, dims_5_s);
+    test_blco_tensor<float,__uint128_t>("-none", 100, 5, dims_5_l);
+    test_blco_tensor<float,uint64_t>("-none", 100, 6, dims_6_s);
+    test_blco_tensor<float,__uint128_t>("-none", 100, 6, dims_6_l);
+    test_blco_tensor<float,uint64_t>("-none", 100, 7, dims_7_s);
+    test_blco_tensor<float,__uint128_t>("-none", 100, 7, dims_7_l);
 
-    test_blco_tensor<long int,uint64_t>(100, 3, dims_3_s);
-    test_blco_tensor<long int,__uint128_t>(100, 3, dims_3_l);
-    test_blco_tensor<long int,uint64_t>(100, 4, dims_4_s);
-    test_blco_tensor<long int,__uint128_t>(100, 4, dims_4_l);
-    test_blco_tensor<long int,uint64_t>(100, 5, dims_5_s);
-    test_blco_tensor<long int,__uint128_t>(100, 5, dims_5_l);
-    test_blco_tensor<long int,uint64_t>(100, 6, dims_6_s);
-    test_blco_tensor<long int,__uint128_t>(100, 6, dims_6_l);
-    test_blco_tensor<long int,uint64_t>(100, 7, dims_7_s);
-    test_blco_tensor<long int,__uint128_t>(100, 7, dims_7_l);
+    test_blco_tensor<long int,uint64_t>("-none", 100, 3, dims_3_s);
+    test_blco_tensor<long int,__uint128_t>("-none", 100, 3, dims_3_l);
+    test_blco_tensor<long int,uint64_t>("-none", 100, 4, dims_4_s);
+    test_blco_tensor<long int,__uint128_t>("-none", 100, 4, dims_4_l);
+    test_blco_tensor<long int,uint64_t>("-none", 100, 5, dims_5_s);
+    test_blco_tensor<long int,__uint128_t>("-none", 100, 5, dims_5_l);
+    test_blco_tensor<long int,uint64_t>("-none", 100, 6, dims_6_s);
+    test_blco_tensor<long int,__uint128_t>("-none", 100, 6, dims_6_l);
+    test_blco_tensor<long int,uint64_t>("-none", 100, 7, dims_7_s);
+    test_blco_tensor<long int,__uint128_t>("-none", 100, 7, dims_7_l);
 
-    test_blco_tensor<double,uint64_t>(100, 3, dims_3_s);
-    test_blco_tensor<double,__uint128_t>(100, 3, dims_3_l);
-    test_blco_tensor<double,uint64_t>(100, 4, dims_4_s);
-    test_blco_tensor<double,__uint128_t>(100, 4, dims_4_l);
-    test_blco_tensor<double,uint64_t>(100, 5, dims_5_s);
-    test_blco_tensor<double,__uint128_t>(100, 5, dims_5_l);
-    test_blco_tensor<double,uint64_t>(100, 6, dims_6_s);
-    test_blco_tensor<double,__uint128_t>(100, 6, dims_6_l);
-    test_blco_tensor<double,uint64_t>(100, 7, dims_7_s);
-    test_blco_tensor<double,__uint128_t>(100, 7, dims_7_l);
+    test_blco_tensor<double,uint64_t>("-none", 100, 3, dims_3_s);
+    test_blco_tensor<double,__uint128_t>("-none", 100, 3, dims_3_l);
+    test_blco_tensor<double,uint64_t>("-none", 100, 4, dims_4_s);
+    test_blco_tensor<double,__uint128_t>("-none", 100, 4, dims_4_l);
+    test_blco_tensor<double,uint64_t>("-none", 100, 5, dims_5_s);
+    test_blco_tensor<double,__uint128_t>("-none", 100, 5, dims_5_l);
+    test_blco_tensor<double,uint64_t>("-none", 100, 6, dims_6_s);
+    test_blco_tensor<double,__uint128_t>("-none", 100, 6, dims_6_l);
+    test_blco_tensor<double,uint64_t>("-none", 100, 7, dims_7_s);
+    test_blco_tensor<double,__uint128_t>("-none", 100, 7, dims_7_l);
 }
 
 int main(int argc, char* argv[]) {
-    if ((argc < 4 || argc > 10) && argc != 1) {
+    if ((argc < 5 || argc > 11) && argc != 1) {
         std::cerr << "Usage: " << argv[0] 
-                  << "<nnz> (up to seven different dimensions) <Type> or no arguments for comprehensive testing\n";
+                  << " <Filename or -none for no file> <nnz> (up to seven different dimensions) <Type> or no arguments for comprehensive testing\n";
         return 1;
     }
     else if(argc != 1){
-        int nnz = std::stoi(argv[1]);
-        int rank = argc - 3;
+        std::string filename = std::string(argv[1]);
+        int nnz = std::stoi(argv[2]);
+        int rank = argc - 4;
         std::string type = std::string(argv[argc - 1]);
         std::vector<int> dimensions;
-        for(int i = 2; i < argc - 1; i++){
+        for(int i = 3; i < argc - 1; i++){
             dimensions.push_back(std::stoi(argv[i]));
         }
 
@@ -140,10 +150,10 @@ int main(int argc, char* argv[]) {
         }
 
         if(bits_needed <= 64){
-            if(type == "int") test_blco_tensor<int,uint64_t>(nnz, rank, dimensions);
-            else if(type == "float") test_blco_tensor<float,uint64_t>(nnz, rank, dimensions);
-            else if(type == "long int") test_blco_tensor<long int,uint64_t>(nnz, rank, dimensions);
-            else if(type == "double") test_blco_tensor<double,uint64_t>(nnz, rank, dimensions);
+            if(type == "int") test_blco_tensor<int,uint64_t>(filename, nnz, rank, dimensions);
+            else if(type == "float") test_blco_tensor<float,uint64_t>(filename, nnz, rank, dimensions);
+            else if(type == "long int") test_blco_tensor<long int,uint64_t>(filename, nnz, rank, dimensions);
+            else if(type == "double") test_blco_tensor<double,uint64_t>(filename, nnz, rank, dimensions);
             else{ 
                 std::cerr << "Unsupported type. The supported types are int, \
                 float, long int, long int and double\n";
@@ -151,10 +161,10 @@ int main(int argc, char* argv[]) {
             }
         }
         else{
-            if(type == "int") test_blco_tensor<int,__uint128_t>(nnz, rank, dimensions);
-            else if(type == "float") test_blco_tensor<float,__uint128_t>(nnz, rank, dimensions);
-            else if(type == "long int") test_blco_tensor<long int,__uint128_t>(nnz, rank, dimensions);
-            else if(type == "double") test_blco_tensor<double,__uint128_t>(nnz, rank, dimensions);
+            if(type == "int") test_blco_tensor<int,__uint128_t>(filename, nnz, rank, dimensions);
+            else if(type == "float") test_blco_tensor<float,__uint128_t>(filename, nnz, rank, dimensions);
+            else if(type == "long int") test_blco_tensor<long int,__uint128_t>(filename, nnz, rank, dimensions);
+            else if(type == "double") test_blco_tensor<double,__uint128_t>(filename, nnz, rank, dimensions);
             else{ 
                 std::cerr << "Unsupported type. The supported types are int, \
                 float, long int, long int and double\n";

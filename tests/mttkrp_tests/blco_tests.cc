@@ -6,7 +6,7 @@
 
 //Tests and times MTTKRP using BLCO tensor 
 template<typename T, typename S>
-void mttkrp_on_tensor(std::string filename, std::vector<int> dims, int nnz, int mode, std::string diff_file = "diff.txt")
+void mttkrp_on_tensor(std::string filename, std::vector<int> dims, int nnz, int mode, std::string diff_file = "differences.txt")
 {
     std::cout << "Testing mode " << mode << " MTTKRP using BLCO Tensor\n";
     std::cout << "Tensor info ...\n" << "Rank " << dims.size() << 
@@ -23,18 +23,21 @@ void mttkrp_on_tensor(std::string filename, std::vector<int> dims, int nnz, int 
     std::vector<NNZ_Entry<T>> test_vec;
     if(filename == "-none"){
         int min_dim = *(std::min_element(dims.begin(), dims.end()));
-        int block_size = 0.05 * min_dim;
+        int block_size = (0.05 * min_dim) + 1;
         int max_blocks = (nnz + block_size - 1) / block_size;
         test_vec = generate_block_sparse_tensor_nd<T>(dims,nnz,0,100,block_size,max_blocks);
     }
-    else test_vec = read_tensor_file_binary<T>(filename, dims);
+    else test_vec = read_tensor_file_binary<T>(filename, rank, nnz);
 
     Blco_Tensor<T,S> blco(test_vec,dims);
+    bool is_csr = blco.get_total_bits_needed() > 74;
 
     std::vector<T> output_matrix;
-    if(rank == 3) output_matrix = MTTKRP_BLCO_3D(mode,blco); //Matrix is flattened
-    else if(rank == 4) output_matrix = MTTKRP_BLCO_4D(mode,blco);
-    else if(rank == 5) output_matrix = MTTKRP_BLCO_5D(mode,blco);
+    std::vector<float> times = {0.0f};
+    if(rank == 3 && !is_csr) output_matrix = MTTKRP_BLCO_3D(mode, blco, times); //Matrix is flattened
+    else if(rank == 4 && !is_csr) output_matrix = MTTKRP_BLCO_4D(mode, blco, times);
+    else if(rank == 5 && !is_csr) output_matrix = MTTKRP_BLCO_5D(mode, blco, times);
+    else if(rank == 4 && is_csr) output_matrix = MTTKRP_BLCO_CSR_4D(mode, blco, times);
     else{
         std::cerr << "invalid rank\n";
         return;
@@ -56,22 +59,15 @@ void mttkrp_on_tensor(std::string filename, std::vector<int> dims, int nnz, int 
 
     if(test_passed) std::cout << "Tests Passed!\n";
     else{
-        std::cout << "Tests Failed!\n";
-        int mat_size = dims[mode - 1] * decomp_rank;
-        if(mat_size < 100000){
             std::cout << "Outputing Matricies to File " << diff_file << "\n";
 
             std::ofstream outfile(diff_file, std::ios::app);
-            print_matrix_to_file(output_matrix.data(), dims[mode - 1], decomp_rank, diff_file, "GPU Matrix");
-            print_matrix_to_file(test_matrix, dims[mode - 1], decomp_rank, diff_file, "CPU Matrix");
-            print_entry_vec(test_vec);
-        }
-        else if(mat_size > 100000){
-            std::cout << "Outputing Matricies to File " << diff_file << "\n";
-
-            std::ofstream outfile(diff_file, std::ios::app);
-            print_differences_to_file(output_matrix.data(), test_matrix, dims[mode - 1], decomp_rank, diff_file, "GPU Matrix", "CPU Matrix");
-        }
+            if constexpr (std::is_floating_point<T>::value) {
+                print_differences_to_file_float(output_matrix.data(), test_matrix, dims[mode - 1], decomp_rank, diff_file, "GPU Matrix", "CPU Matrix");
+            }
+            else {
+                print_differences_to_file(output_matrix.data(), test_matrix, dims[mode - 1], decomp_rank, diff_file, "GPU Matrix", "CPU Matrix");
+            }           
     }
     
     delete[] test_matrix;

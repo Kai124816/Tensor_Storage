@@ -91,18 +91,19 @@ void test_alto_tensor(std::string filename, int nnz, int rank, std::vector<int> 
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 5 || argc > 11) {
+    if (argc < 7 || argc > 12) {
         std::cerr << "Usage: " << argv[0] 
-                  << " <nnz> (up to seven different dimensions) <Type> <Num iterations>\n";
+                  << "<filename> <nnz> (three to seven different dimensions) <Type> <Num iterations>\n";
         return 1;
     }
     else{
-        int nnz = std::stoi(argv[1]);
+        std::string file = std::string(argv[1]);
+        int nnz = std::stoi(argv[2]);
         int rank = argc - 4;
         std::string type = std::string(argv[argc - 2]);
         int iter = std::stoi(argv[argc - 1]);
         std::vector<int> dimensions;
-        for(int i = 2; i < argc - 2; i++){
+        for(int i = 3; i < argc - 2; i++){
             dimensions.push_back(std::stoi(argv[i]));
         }
 
@@ -112,10 +113,10 @@ int main(int argc, char* argv[]) {
         }
 
         if(bits_needed <= 64){
-            if(type == "int") test_alto_tensor<int,uint64_t>(nnz, rank, dimensions, iter);
-            else if(type == "float") test_alto_tensor<float,uint64_t>(nnz, rank, dimensions, iter);
-            else if(type == "long int") test_alto_tensor<long int,uint64_t>(nnz, rank, dimensions, iter);
-            else if(type == "double") test_alto_tensor<double,uint64_t>(nnz, rank, dimensions, iter);
+            if(type == "int") test_alto_tensor<int,uint64_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "float") test_alto_tensor<float,uint64_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "long int") test_alto_tensor<long int,uint64_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "double") test_alto_tensor<double,uint64_t>(file, nnz, rank, dimensions, iter);
             else{ 
                 std::cerr << "Unsupported type. The supported types are int, \
                 float, long int, and long int\n";
@@ -123,10 +124,10 @@ int main(int argc, char* argv[]) {
             }
         }
         else{
-            if(type == "int") test_alto_tensor<int,__uint128_t>(nnz, rank, dimensions, iter);
-            else if(type == "float") test_alto_tensor<float,__uint128_t>(nnz, rank, dimensions, iter);
-            else if(type == "long int") test_alto_tensor<long int,__uint128_t>(nnz, rank, dimensions, iter);
-            else if(type == "double") test_alto_tensor<double,__uint128_t>(nnz, rank, dimensions, iter);
+            if(type == "int") test_alto_tensor<int,__uint128_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "float") test_alto_tensor<float,__uint128_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "long int") test_alto_tensor<long int,__uint128_t>(file, nnz, rank, dimensions, iter);
+            else if(type == "double") test_alto_tensor<double,__uint128_t>(file, nnz, rank, dimensions, iter);
             else{ 
                 std::cerr << "Unsupported type. The supported types are int, \
                 float, long int, and long int\n";
