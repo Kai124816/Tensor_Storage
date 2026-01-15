@@ -1,0 +1,42 @@
+----------Darpa Tensor: (Dimensions: 22,476 x 22,476 x 23,776,223, Non zeros: 28,436,032)----------
+Mode 1 MTTKRP Mean Times:
+    Version 1: 28.4696 ms
+    Version 2: 10.1556 ms
+    Version 3: 10.1548 ms
+Mode 2 MTTKRP Times:
+    Version 1: 77.7813 ms
+    Version 2: 11.3713 ms
+    Version 3: 11.1191 ms
+Mode 3 MTTKRP Times:
+    Version 1: 7.19929 ms
+    Version 2: 7.14983 ms
+    Version 3: 7.24039 ms
+
+----------Freebase Music: (Dimensions: 23,344,784 x 23,344,784 x 166, Non zeros: 99,546,550)----------
+Mode 1 MTTKRP Mean Times:
+    Version 1: 27.5693 ms
+    Version 2: 23.4506 ms
+    Version 3: 23.5112 ms
+Mode 2 MTTKRP Times:
+    Version 1: 27.4397 ms
+    Version 2: 23.7374 ms
+    Version 3: 23.8853 ms
+Mode 3 MTTKRP Times:
+    Version 1: 1280.4 ms
+    Version 2: 36.1536 ms
+    Version 3: 65.7297 ms
+
+----------NELL-1: (Dimensions: 2,902,330 x 2,143,368 x 25,495,389, Non zeros: 143,599,551)----------
+Mode 1 MTTKRP Mean Times:
+    Version 1: 1375.03 ms
+    Version 2: 71.1318 ms
+    Version 3: 58.9952 ms
+Mode 2 MTTKRP Times:
+    Version 1: 1374.17 ms
+    Version 2: 71.4387 ms
+    Version 3: 62.0332 ms
+Mode 3 MTTKRP Times:
+    Version 1: 990.23 ms
+    Version 2: 70.7663 ms
+    Version 3: 55.3153 ms
+
