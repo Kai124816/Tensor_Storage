@@ -27,7 +27,7 @@ struct BLCO_CSR_GPU {
 };
 
 //======================================================================
-// Functions that get information about the GPU
+// GPU information function
 //======================================================================
 
 //Get maximum shared memory
@@ -104,6 +104,8 @@ inline void print_amd_gpu_model() {
 //======================================================================
 // CSR Blocks Functions
 //======================================================================
+
+//Allocates Blocks to GPU in CSR format
 template<typename T, typename S>
 void allocate_and_copy_BLCO_to_GPU(const Blco_Tensor<T, S>& host_tensor, BLCO_CSR_GPU<T>& gpu_struct) {
     const std::vector<BLCO_BLOCK_CPU<T>>& blco = host_tensor.get_blco();
@@ -151,6 +153,7 @@ void allocate_and_copy_BLCO_to_GPU(const Blco_Tensor<T, S>& host_tensor, BLCO_CS
     HIP_CHECK(hipMemcpy(gpu_struct.block_ptr, h_block_ptr.data(), 
                         (range + 1) * sizeof(uint64_t), hipMemcpyHostToDevice));
 }
+
 //======================================================================
 // Memory allocation and deallocation functions
 //======================================================================
@@ -336,7 +339,6 @@ inline std::pair<int,int> determine_dimensions_smem(uint64_t non_zeros, int ui, 
 // ----------------------------
 
 // Compute ceil(log2(x)) at runtime on device.
-// Used to determine how many bits are required to represent dimensions.
 __device__ inline int ceiling_log2(int x) 
 {
     if (x == 1) return 0;
@@ -349,7 +351,6 @@ __device__ inline int ceiling_log2(int x)
 }
 
 // Find which block of the BLCO tensor the current thread's index falls into.
-// Returns the entry for the corresponding thread
 template<typename T>
 __device__ inline BLCO_ENTRY<T> extract_entry(BLCO_BLOCK_GPU<T>* tensor, int num_blocks, int& block)
 {
@@ -390,8 +391,6 @@ __device__ inline int find_block_csr(uint64_t* block_ptr, int block_offset, int 
 }
 
 // Extract mode-specific index from a linearized index.
-// Uses masks and shifts to recover the appropriate mode coordinate.
-// Handles overflow cases when row+col+depth bits exceed 64 (needs block info).
 __device__ inline int extract_mode(uint64_t linear_idx, int mode, 
     const uint64_t* bitmasks, const int* bit_widths, int rank, int block)
 {

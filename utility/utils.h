@@ -45,11 +45,6 @@ struct NNZ_Entry {
     T value;
 };
 
-struct MADResult {
-    float median;
-    float mad_sigma; // This is the "robust" standard deviation
-};
-
 // Represents the header of a binary tensor file
 // Note: In the binary file, the 'dims' array should strictly follow this struct.
 struct TensorHeader {
@@ -58,13 +53,21 @@ struct TensorHeader {
     // In binary format, write 'rank' integers for dimensions immediately after this struct
 };
 
-// Structure to hold statistics results
+// Structure to hold statistics results (Standard)
 struct StatsResult {
     float mean;
     float std_dev;
 };
 
-// --- Math Utilities ---
+// Structure to hold statistics results (MAD)
+struct MADResult {
+    float median;
+    float mad_sigma; // This is the "robust" standard deviation
+};
+
+// ==========================
+// Math Utilities
+// ==========================
 
 // floor(log2(x)) for integer-like types
 template<typename S>
@@ -89,7 +92,10 @@ int ceiling_log2(S x) {
     return res;
 }
 
-// --- Sparse Tensor Utilities ---
+// ==========================
+// Non zero entry vector 
+// utilities
+// ==========================
 
 // Generate a random sparse tensor with approximate block structure.
 // Parameters:
@@ -209,22 +215,12 @@ std::vector<NNZ_Entry<T>> generate_block_sparse_tensor_nd(
     return entries;
 }
 
-// -----------------------------------------------------------
-// N-Dimensional Binary File Reader
-// -----------------------------------------------------------
 /**
  * Reads a tensor from a binary file consisting ONLY of raw entries.
  * No header (rank/nnz/dims) is expected in the file.
  * returns A vector of NNZ_Entry objects (converted to 0-indexed).
  */
-/**
- * Reads a tensor from a binary file consisting ONLY of raw entries.
- * Checks for incomplete "rows" (missing coordinates or values).
- * * @param filename Path to the binary file.
- * @param rank The number of dimensions (modes) of the tensor.
- * @param nnz The number of non-zero entries to read.
- * @return A vector of NNZ_Entry objects.
- */
+/**/
 template<typename T>
 std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, int rank, int64_t nnz) 
 {
@@ -395,6 +391,10 @@ void print_tensor_stats(const std::vector<NNZ_Entry<T>>& entry_vec) {
     std::cout << "========================================" << std::endl;
 }
 
+// ==========================
+// MTTKRP Utilities
+// ==========================
+
 /**
  * N-Dimensional MTTKRP (Flattened Row-Major)
  * mode: The target mode to update (1-indexed)
@@ -436,7 +436,9 @@ T* MTTKRP_Naive(int mode, T* M, const std::vector<T*>& factors, int R,
     return M;
 }
 
-// --- Matrix Utilities ---
+// ==========================
+// Matrix Utilities
+// ==========================
 
 // Deep copy of a matrix (allocate and copy all entries)
 template<typename T>
@@ -514,6 +516,36 @@ void print_matrix_to_file(const T* data, size_t rows, size_t cols,
     std::cout << "Matrix written to " << filename 
               << " (" << rows << "x" << cols << ")\n";
     
+}
+
+// ==========================
+// Array Utilities
+// ==========================
+
+// Deep copy of a array (allocate and copy all entries)
+template<typename T>
+T* create_and_copy_array(T* basis, int size) {
+    T* copy_arr = new T[size];
+    for (int i = 0; i < size; ++i)
+        copy_arr[i] = basis[i];
+    return copy_arr;
+}
+
+// Return true if arrays are exactly equal, false otherwise
+template<typename T>
+bool compare_arrays(T* a1, T* a2, int size) {
+    for (int i = 0; i < size; i++)
+            if (a1[i] != a2[i]) return false;
+    return true;
+}
+
+// Compares floating point/double arrays and outputs the absolute difference
+template<typename T>
+double compare_arrays_float(T* a1, T* a2, int size) {
+    double diff = 0.0;
+    for (int i = 0; i < size; i++)
+            diff += std::abs(a1[i] - a2[i]);
+    return diff / size;
 }
 
 template<typename T>
@@ -616,36 +648,9 @@ void print_differences_to_file_float(const T* m1, const T* m2, size_t rows, size
     }
 }
 
-// --- Array Utilities ---
-
-// Deep copy of a array (allocate and copy all entries)
-template<typename T>
-T* create_and_copy_array(T* basis, int size) {
-    T* copy_arr = new T[size];
-    for (int i = 0; i < size; ++i)
-        copy_arr[i] = basis[i];
-    return copy_arr;
-}
-
-// Return true if arrays are exactly equal, false otherwise
-template<typename T>
-bool compare_arrays(T* a1, T* a2, int size) {
-    for (int i = 0; i < size; i++)
-            if (a1[i] != a2[i]) return false;
-    return true;
-}
-
-// Compares floating point/double arrays and outputs the absolute difference
-template<typename T>
-double compare_arrays_float(T* a1, T* a2, int size) {
-    double diff = 0.0;
-    for (int i = 0; i < size; i++)
-            diff += std::abs(a1[i] - a2[i]);
-    return diff / size;
-}
-
-
-// --- Printing Helpers ---
+// ==========================
+// Printing Helpers
+// ==========================
 
 // Print all entries in a sparse tensor
 template<typename T>

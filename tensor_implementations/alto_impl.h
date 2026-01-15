@@ -236,10 +236,10 @@ public:
     Alto_Tensor(const std::vector<NNZ_Entry<T>>& entry_vec, std::vector<int> dims, int decomp_rank = 10) 
     : Tensor<T,S>(entry_vec, dims, decomp_rank)
     {
-        create_masks();
-        create_alto_vector(entry_vec);
-        num_threads = ideal_threads();
-        set_partitions();
+        create_masks(); //Create Masks
+        create_alto_vector(entry_vec); //Create Alto tensor using entry vector
+        num_threads = ideal_threads(); //Determine ideal threads for MTTKRP
+        set_partitions(); //Partion Alto tensor for MTTKRP
     }
 
     //------------------------------------------------------------------
@@ -281,6 +281,9 @@ public:
         }
     }
     
+    //------------------------------------------------------------------
+    // Parallel MTTKRP (N-dimensional)
+    //------------------------------------------------------------------
     T* MTTKRP_Alto_Parallel(int target_mode) 
     {
         omp_set_num_threads(num_threads);

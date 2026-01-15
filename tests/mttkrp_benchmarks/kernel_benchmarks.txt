@@ -1,4 +1,4 @@
-==========Version 1.0 Kernel Benchmarks==========
+==========Version 3.0 Kernel Benchmarks==========
 
 ----------Darpa Tensor: (Dimensions: 22,476 x 22,476 x 23,776,223, Non zeros: 28,436,032)----------
 Mode 1 MTTKRP Times:

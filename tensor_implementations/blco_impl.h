@@ -254,6 +254,9 @@ protected:
 }
 
 public:
+    //------------------------------------------------------------------
+    // Constructor
+    //------------------------------------------------------------------
     Blco_Tensor(const std::vector<NNZ_Entry<T>>& entry_vec, std::vector<int> dims, int decomp_rank = 10) : 
     Alto_Tensor<T,S>(entry_vec, dims, decomp_rank)
     {
@@ -315,7 +318,6 @@ public:
     const std::vector<BLCO_BLOCK_CPU<T>>& get_blco() const {return blco_tensor;}
     std::vector<uint64_t> get_bitmasks() const {return bitmasks;}
     int get_num_blocks() const {return populated_blocks.size();}
-    int get_total_bits_needed() const {return std::accumulate(bit_widths.begin(), bit_widths.end(), 0);}
 
     //------------------------------------------------------------------
     // Copy GPU result vector(mathematical vector not c++ vector) 

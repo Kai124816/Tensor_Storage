@@ -194,8 +194,10 @@ public:
         init_factor_matricies(); 
     }
 
+    //------------------------------------------------------------------
     // 2. COPY CONSTRUCTOR
     // Performs a deep copy so that the new object has its own memory
+    //------------------------------------------------------------------
     Tensor(const Tensor& other) {
         rank = other.rank;
         num_bits = other.num_bits;
@@ -213,8 +215,10 @@ public:
         }
     }
 
+    //------------------------------------------------------------------
     // 3. COPY ASSIGNMENT OPERATOR
     // Handles self-assignment and frees existing memory before copying
+    //------------------------------------------------------------------
     Tensor& operator=(const Tensor& other) {
         if (this != &other) { // Protect against self-assignment
             // Free current resources
@@ -239,33 +243,14 @@ public:
     }
 
     //------------------------------------------------------------------
-    // Get factor matrices (mode-1, mode-2, mode-3)
+    // Getters
     //------------------------------------------------------------------
-    std::vector<T*> get_fmats() const 
-    {
-        return fmats;
-    }
-    //------------------------------------------------------------------
-    // Get tensor dimensions [rows, cols, depth]
-    //------------------------------------------------------------------
-    std::vector<int> get_dims() const
-    {
-        return dims;
-    }
-    //------------------------------------------------------------------
-    // Get factorization rank
-    //------------------------------------------------------------------
-    int get_factor_rank() const
-    {
-        return factor_rank;
-    }
-    //------------------------------------------------------------------
-    // Get number of nonzero entries
-    //------------------------------------------------------------------
-    int get_nnz() const
-    {
-        return nnz_entries;
-    }
+    std::vector<T*> get_fmats() const { return fmats;}
+    std::vector<int> get_dims() const{ return dims;}
+    int get_factor_rank() const { return factor_rank;}
+    int get_nnz() const { return nnz_entries;}
+    int get_total_bits_needed() const { return num_bits;}
+
     //------------------------------------------------------------------
     // Destructor: free factor matrices
     //------------------------------------------------------------------
