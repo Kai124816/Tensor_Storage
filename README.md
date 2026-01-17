@@ -80,8 +80,9 @@ D. Storage Verification
    Command: ./test_storage <filename> <nnz> <dims...> <type>
    - Run with no arguments for a comprehensive storage test suite.
 
-Note: The code for the other test suites is still under development.
-Note: If testing on tensor from FROSTT repository lookup the dimensions of the
+Notes: 
+- The code for the other test suites is still under development.
+- If testing on tensor from FROSTT repository lookup the dimensions of the
 tensor in tensors/tensor_list.txt
 
 other options to add to makefiles:
@@ -103,6 +104,7 @@ Paper on BLCO tensor storage: https://arxiv.org/abs/2201.12523
 
 
  
+
 
 
 
