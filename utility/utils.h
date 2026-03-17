@@ -945,5 +945,80 @@ std::unordered_map<int, int> find_anomalies_mad(const std::vector<float>& data, 
     return anomaly_counts;
 }
 
+// ==========================
+// .txt file generator
+// ==========================
+//Generates a .txt file with random entries. The file is supposed to represent a vectorized matrix
+void generate_vmat_file(const std::string& filename, int num_entries, std::pair<int, int> range) 
+{
+    if (num_entries <= 0) {
+        std::cerr << "Error: num_entries must be positive." << std::endl;
+        return;
+    }
+    if (range.first > range.second) {
+        std::cerr << "Error: Invalid range [" << range.first << ", " << range.second << "]." << std::endl;
+        return;
+    }
+
+    std::ofstream outfile(filename);
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(range.first, range.second);
+
+    for (int i = 0; i < num_entries; ++i) {
+        outfile << dist(rng) << "\n";
+    }
+
+    outfile.close();
+    std::cout << "Generated " << num_entries << " entries in " << filename << std::endl;
+}
+
+// ==========================
+// .txt file reader
+// ==========================
+//Reads a .txt file to an array of size arr_size.
+//If arr_size exceeds the number of lines in the file,
+//wraps back to the first entry (circular/modulo indexing).
+template<typename T>
+T* file_to_array(const std::string& filename, int arr_size)
+{
+    if (arr_size <= 0) {
+        std::cerr << "Error: arr_size must be positive." << std::endl;
+        return nullptr;
+    }
+
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return nullptr;
+    }
+
+    // Read all values from the file into a buffer
+    std::vector<T> buffer;
+    T val;
+    while (file >> val) {
+        buffer.push_back(val);
+    }
+    file.close();
+
+    if (buffer.empty()) {
+        std::cerr << "Error: File " << filename << " is empty or contains no valid entries." << std::endl;
+        return nullptr;
+    }
+
+    // Allocate output array and fill with wrap-around (circular indexing)
+    T* arr = new T[arr_size];
+    size_t file_size = buffer.size();
+    for (int i = 0; i < arr_size; ++i) {
+        arr[i] = buffer[i % file_size];
+    }
+
+    return arr;
+}
+
 #endif
 

@@ -442,9 +442,7 @@ __device__ inline void group_mask_shfl_only(int target_val, unsigned long long &
 
     for (int k = 0; k < wf_size; ++k) {
         int val_k = __shfl(target_val, k, wf_size);
-        if (val_k == target_val) {
-            output_mask |= (1ULL << k);
-        }
+        output_mask |= ((1ULL & (target_val == val_k)) << k); 
     }
 }
 

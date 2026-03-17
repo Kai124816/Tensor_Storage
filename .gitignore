@@ -50,6 +50,7 @@ tests/mttkrp_tests/rocprof_output/
 
 # ===== Directory with helper files =====
 utility/personal_utils/
+utility/fmat_files/
 
 # ===== Directory and files with output files =====
 /output/

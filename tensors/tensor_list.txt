@@ -2,54 +2,54 @@
 
 Darpa: https://frostt-tensors.s3.us-east-2.amazonaws.com/1998DARPA/1998darpa.tns.gz 
 Dimensions: 22,476 x 22,476 x 23,776,223, Non zeros: 28,436,032
-Passed: No
+Passed: Yes
 
 Freebase Music: https://frostt-tensors.s3.us-east-2.amazonaws.com/FB-M/fb-m.tns.gz
 Dimensions: 23,344,784 x 23,344,784 x 166, Non zeros: 99,546,550
-Passed: No
+Passed: Yes
 
-NELL-1: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-1.tns.gz 
+NELL-1: 
 Dimensions: 2,902,330 x 2,143,368 x 25,495,389, Non zeros: 143,599,552
-Passed: No
+Passed: Yes
 
 NELL-2: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-2.tns.gz 
 Dimensions: 12,092 x 9,184 x 28,818, Non zeros: 76,879,419
-Passed: No
+Passed: Yes
 
 ----------Four dimensional tensors----------
 
 Chicago Crime: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/chicago-crime/comm/chicago-crime-comm.tns.gz
 Dimensions: 6,186 x 24 x 77 x 32 Non zeros: 5,330,673
-Passed: No
+Passed: Yes
 
 Delcious: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/delicious/delicious-4d.tns.gz
 Dimensions: 532,924 x 17,262,471 x 2,480,308 x 1,443 Non zeros: 140,126,220
-Passed: No
+Passed: Yes
 
 Enron Emails: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/enron/enron.tns.gz
 Dimensions: 6,066 x 5,699 x 244,268 x 1,176 Non zeros: 54,202,099
-Passed: No
+Passed: Yes
 
 Flickr: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/flickr/flickr-4d.tns.gz 
 Dimensions: 319,686 x 28,153,045 x 1,607,191 x 731 Non zeros: 112,890,310
-Passed: No
+Passed: Yes
 
 NIPS: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nips/nips.tns.gz 
 Dimensions: 2,482 x 2,862 x 14,036 x 17 Non zeros: 3,101,609
-Passed: No
+Passed: Yes
 
 Uber Pickups: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/uber-pickups/uber.tns.gz 
 Dimensions: 183 x 24 x 1,140 x 1,717 Non zeros: 3,309,490
-Passed: No
+Passed: Yes
 
 ----------Five dimensional tensors----------
 VAST Tensor: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/vast-2015-mc1/vast-2015-mc1-5d.tns.gz 
 Dimensions: 165,427 x 11,374 x 2 x 100 x 89 Non zeros: 26,021,945
-Passed: No
+Passed: Yes
 
 LBNL Tensor: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/lbnl-network/lbnl-network.tns.gz 
 Dimensions: 1,605 x 4,198 x 1,631 x 4,209 x 868,131 Non zeros: 1,698,825
-Passed: No
+Passed: Yes
 
 LANL: https://frostt-tensors.s3.us-east-2.amazonaws.com/LANL2/lanl2.tns.gz 
 Dimensions: 3,761 x 11,154 x 8,711 x 75,147 x 9 Non zeros: 69,082,466 (Non zero indexed)
