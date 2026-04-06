@@ -88,5 +88,7 @@ Thumbs.db
 # ===== binary tensors =====
 *.bin
 
+# ===== old test suite =====
+legacy_tests/
 
 

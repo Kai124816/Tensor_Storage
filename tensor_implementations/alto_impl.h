@@ -5,7 +5,11 @@
 #include <unordered_set>
 #include <omp.h>
 #include <algorithm>
+#include <fstream>
+#include <fcntl.h>
+#include <unistd.h>
 #include "tensor_impl.h"
+#include "../utility/utils.h"
 
 //======================================================================
 // ALTOEntry: Represents one nonzero entry in ALTO format
@@ -37,6 +41,99 @@ protected:
     std::vector<S> bitmasks;                    // Stores bitmasks for each mode
     std::vector<int> partitions;                // Partition boundaries for NNZ distribution
     std::vector<ALTOEntry<T,S>> alto_tensor;    // Compact ALTO representation of the tensor
+
+    //------------------------------------------------------------------
+    // Read a binary tensor file directly into alto_tensor, bypassing
+    // any intermediate NNZ_Entry representation.
+    // File format (mirrors read_tensor_file_binary from utils.h):
+    //   - No file header
+    //   - Each entry: rank x int32_t coords (1-indexed), then 1 x T value
+    //------------------------------------------------------------------
+    void read_binary_to_alto(const std::string& filename, int64_t nnz)
+    {
+        if (filename.empty())
+            throw std::invalid_argument("read_binary_to_alto: filename must not be empty");
+        if (nnz <= 0)
+            throw std::invalid_argument("read_binary_to_alto: nnz must be positive, got " +
+                                       std::to_string(nnz));
+
+        int fd = open(filename.c_str(), O_RDONLY);
+        if (fd < 0)
+            throw std::runtime_error("read_binary_to_alto: could not open file \"" + filename + "\"");
+
+        const int    file_rank    = this->rank;
+        const size_t coords_bytes = file_rank * sizeof(int32_t);
+        const size_t value_bytes  = sizeof(T);
+        const size_t entry_bytes  = coords_bytes + value_bytes;
+
+        alto_tensor.clear();
+        alto_tensor.resize(nnz);
+
+        #pragma omp parallel
+        {
+            int num_threads = omp_get_num_threads();
+            int thread_id = omp_get_thread_num();
+            
+            // Calculate thread partition
+            int64_t entries_per_thread = nnz / num_threads;
+            int64_t start_entry = thread_id * entries_per_thread;
+            int64_t end_entry = (thread_id == num_threads - 1) ? nnz : start_entry + entries_per_thread;
+            int64_t thread_entries = end_entry - start_entry;
+            
+            if (thread_entries > 0) {
+                // Read chunks of 1 million entries (~20-40 MB) to maintain bounded memory overhead
+                const int64_t chunk_size = 1048576;
+                std::vector<char> local_buffer;
+                std::vector<int> coords(file_rank);
+
+                int64_t entries_processed = 0;
+                while (entries_processed < thread_entries) {
+                    int64_t current_chunk_entries = std::min(chunk_size, thread_entries - entries_processed);
+                    size_t bytes_to_read = current_chunk_entries * entry_bytes;
+                    
+                    local_buffer.resize(bytes_to_read);
+                    ssize_t bytes_read = pread(fd, local_buffer.data(), bytes_to_read, 
+                                            (start_entry + entries_processed) * entry_bytes);
+                    
+                    if (bytes_read != static_cast<ssize_t>(bytes_to_read)) {
+                        #pragma omp critical
+                        {
+                            std::cerr << "Thread " << thread_id << " failed to read full chunk (expected " 
+                                      << bytes_to_read << " bytes, got " << bytes_read << ")" << std::endl;
+                        }
+                        break; 
+                    }
+
+                    const char* ptr = local_buffer.data();
+                    for (int64_t i = 0; i < current_chunk_entries; ++i) {
+                        // Parse coordinates
+                        std::copy(ptr, ptr + coords_bytes, reinterpret_cast<char*>(coords.data()));
+                        ptr += coords_bytes;
+
+                        // Parse value
+                        T value;
+                        std::copy(ptr, ptr + value_bytes, reinterpret_cast<char*>(&value));
+                        ptr += value_bytes;
+
+                        // Convert 1-indexed → 0-indexed
+                        for (auto& c : coords) c -= 1;
+
+                        alto_tensor[start_entry + entries_processed + i].linear_index = translate_idx(coords);
+                        alto_tensor[start_entry + entries_processed + i].value = value;
+                    }
+
+                    entries_processed += current_chunk_entries;
+                }
+            }
+        }
+        
+        close(fd);
+
+        std::sort(alto_tensor.begin(), alto_tensor.end(),
+            [](const ALTOEntry<T,S>& a, const ALTOEntry<T,S>& b) {
+                return a.linear_index < b.linear_index;
+            });
+    }
 
     //------------------------------------------------------------------
     // Choose "ideal" number of threads for parallel algorithm based on NNZ size
@@ -73,6 +170,9 @@ protected:
     //------------------------------------------------------------------
     int determine_block_offset(int mode, int block_index)
     {
+        if (block_index < 0 || block_index >= static_cast<int>(partitions.size()))
+            throw std::out_of_range("determine_block_offset: block_index " + std::to_string(block_index) +
+                                   " is out of range [0, " + std::to_string(partitions.size() - 1) + "]");
         int start = (block_index > 0) ? partitions[block_index - 1] : 0;
         int end = partitions[block_index];
         int min = *(std::max_element(this->dims.begin(), this->dims.end()));
@@ -89,6 +189,9 @@ protected:
     //------------------------------------------------------------------
     int determine_block_limit(int mode, int block_index)
     {
+        if (block_index < 0 || block_index >= static_cast<int>(partitions.size()))
+            throw std::out_of_range("determine_block_limit: block_index " + std::to_string(block_index) +
+                                   " is out of range [0, " + std::to_string(partitions.size() - 1) + "]");
         int start = (block_index > 0) ? partitions[block_index - 1] : 0;
         int end = partitions[block_index];
         int max = 0;
@@ -194,14 +297,25 @@ protected:
     //------------------------------------------------------------------
     // Translate (i,j,k,...) → ALTO linearized index using masks
     //------------------------------------------------------------------
-    S translate_idx(std::vector<int> indices) {
+    S translate_idx(const std::vector<int>& indices) 
+    {
+        if (static_cast<int>(indices.size()) != this->rank)
+            throw std::invalid_argument(
+                "translate_idx: indices size " + std::to_string(indices.size()) +
+                " does not match tensor rank " + std::to_string(this->rank));
         if (std::accumulate(this->dims.begin(), this->dims.end(), 0) == 0) return 0;
     
         S val = 0;
+        int local_indices[32]; // Max rank fallback
+        for (int m = 0; m < this->rank; ++m) local_indices[m] = indices[m];
+
         for (int i = 0; i < this->num_bits; ++i) {
             S mask = static_cast<S>(1) << i;
-            for(int i = 0; i < this->rank; i++){
-                if(mask & bitmasks[i]) { if(indices[i] & 1ULL) val |= mask; indices[i] >>= 1;}
+            for(int m = 0; m < this->rank; m++){
+                if(mask & bitmasks[m]) { 
+                    if(local_indices[m] & 1ULL) val |= mask; 
+                    local_indices[m] >>= 1;
+                }
             }
         }
         return val;
@@ -231,22 +345,101 @@ protected:
 
 public:
     //------------------------------------------------------------------
-    // Constructor
+    // Default Constructor
+    //------------------------------------------------------------------
+    Alto_Tensor() : Tensor<T,S>()
+    {
+        bitmasks = {};
+        alto_tensor = {};
+        partitions = {};
+        num_threads = 0;
+    }
+
+    //------------------------------------------------------------------
+    // Constructor 1: from a pre-built vector of sparse nonzero entries
     //------------------------------------------------------------------
     Alto_Tensor(const std::vector<NNZ_Entry<T>>& entry_vec, std::vector<int> dims, int decomp_rank = 10) 
     : Tensor<T,S>(entry_vec, dims, decomp_rank)
     {
-        create_masks(); //Create Masks
-        create_alto_vector(entry_vec); //Create Alto tensor using entry vector
-        num_threads = ideal_threads(); //Determine ideal threads for MTTKRP
-        set_partitions(); //Partion Alto tensor for MTTKRP
+        // Ensure S is wide enough to hold all ALTO bits plus the boundary flag bit
+        if (static_cast<int>(sizeof(S) * 8) <= this->num_bits)
+            throw std::invalid_argument(
+                "Alto_Tensor: index type S (" + std::to_string(sizeof(S) * 8) +
+                " bits) is too narrow for " + std::to_string(this->num_bits) +
+                " ALTO bits; use a wider type such as uint64_t or __uint128_t");
+
+        create_masks();
+        create_alto_vector(entry_vec);
+        num_threads = ideal_threads();
+        set_partitions();
+    }
+
+    //------------------------------------------------------------------
+    // Constructor 2: read NNZ entries directly from a binary file,
+    // writing straight into alto_tensor with no intermediate NNZ_Entry.
+    // The binary format mirrors read_tensor_file_binary from utils.h:
+    //   - No file header
+    //   - Each entry: rank x int32_t coords (1-indexed), then 1 x T value
+    //------------------------------------------------------------------
+    Alto_Tensor(const std::string& filename, int64_t nnz,
+                std::vector<int> dims, std::vector<std::vector<T>>& fmats, int decomp_rank = 10)
+    : Tensor<T,S>({}, dims, fmats, decomp_rank)   // empty entry vec: factor matrices init'd, nnz_entries=0
+    {
+        // Fix nnz_entries — the empty entry vec left it at 0
+        if (nnz <= 0)
+            throw std::invalid_argument(
+                "Alto_Tensor: nnz must be positive, got " + std::to_string(nnz));
+        this->nnz_entries = static_cast<uint64_t>(nnz);
+
+        // Ensure S is wide enough to hold all ALTO bits plus the boundary flag bit
+        if (static_cast<int>(sizeof(S) * 8) <= this->num_bits)
+            throw std::invalid_argument(
+                "Alto_Tensor: index type S (" + std::to_string(sizeof(S) * 8) +
+                " bits) is too narrow for " + std::to_string(this->num_bits) +
+                " ALTO bits; use a wider type such as uint64_t or __uint128_t");
+
+        create_masks();  // must come before read_binary_to_alto
+        read_binary_to_alto(filename, nnz);  // read + encode + sort directly
+        num_threads = ideal_threads();
+        set_partitions();
+        this->nnz_entries = nnz;
+    }
+
+    //------------------------------------------------------------------
+    // Copy Constructor
+    //------------------------------------------------------------------
+    Alto_Tensor(const Alto_Tensor& other) : Tensor<T, S>(other) 
+    {
+        num_threads = other.num_threads;
+        bitmasks = other.bitmasks;
+        partitions = other.partitions;
+        alto_tensor = other.alto_tensor;
+    }
+
+    //------------------------------------------------------------------
+    // Copy Assignment Operator
+    //------------------------------------------------------------------
+    Alto_Tensor& operator=(const Alto_Tensor& other) 
+    {
+        if (this != &other) {
+            Tensor<T, S>::operator=(other);
+            num_threads = other.num_threads;
+            bitmasks = other.bitmasks;
+            partitions = other.partitions;
+            alto_tensor = other.alto_tensor;
+        }
+        return *this;
     }
 
     //------------------------------------------------------------------
     // Extract coordinate from ALTO index
     //------------------------------------------------------------------
-    int get_mode_idx_alto(S alto_idx, int mode) 
+    int get_mode_idx_alto(S alto_idx, int mode) const
     {
+        if (mode < 1 || mode > this->rank)
+            throw std::out_of_range("get_mode_idx_alto: mode " + std::to_string(mode) +
+                                   " is out of range [1, " + std::to_string(this->rank) + "]");
+
         S mask = bitmasks[mode - 1];
 
         int coord = 0, bit_pos = 0;
@@ -280,12 +473,38 @@ public:
             std::cout << ", val=" << e.value << "\n";
         }
     }
-    
+
+    //------------------------------------------------------------------
+    // Create an Entry Vec using the Alto Tensor
+    //------------------------------------------------------------------
+    std::vector<NNZ_Entry<T>> create_entry_vec() const
+    {
+        std::vector<NNZ_Entry<T>> entries;
+        entries.resize(this->nnz_entries);
+        for(int i = 0; i < this->nnz_entries; i++){
+            std::vector<int> indices = {};
+            S lin_idx = alto_tensor[i].linear_index;
+            for(int j = 0; j < this->rank; j++){
+                indices.push_back(get_mode_idx_alto(lin_idx, j + 1));
+            }
+            entries[i].coords = indices;
+            entries[i].value = alto_tensor[i].value;
+        }
+
+        return entries;
+    }
+
     //------------------------------------------------------------------
     // Parallel MTTKRP (N-dimensional)
     //------------------------------------------------------------------
-    T* MTTKRP_Alto_Parallel(int target_mode) 
+    std::vector<T> MTTKRP_Parallel(int target_mode) 
     {
+        if (target_mode < 1 || target_mode > this->rank)
+            throw std::out_of_range("MTTKRP_Alto_Parallel: target_mode " + std::to_string(target_mode) +
+                                   " is out of range [1, " + std::to_string(this->rank) + "]");
+        if (alto_tensor.empty())
+            throw std::runtime_error("MTTKRP_Alto_Parallel: tensor has no nonzero entries");
+
         omp_set_num_threads(num_threads);
         const int num_modes = this->rank;
         const int R = this->factor_rank;
@@ -318,7 +537,7 @@ public:
                 for (int m = start; m < end; ++m) {
                     S idx = alto_tensor[m].linear_index;
                     T val = alto_tensor[m].value;
-                    bool boundary = (idx >> total_shift) & S(1) != 0;
+                    bool boundary = (idx >> total_shift) & (S(1) != 0);
                     idx &= ~mask;
     
                     for(int d = 1; d <= num_modes; ++d) {
@@ -326,7 +545,7 @@ public:
                     }
     
                     int target_row = local_indices[target_mode - 1];
-                    T* target_fmat = this->fmats[target_mode - 1];
+                    T* target_fmat = this->fmats[target_mode - 1].data();
     
                     for (int r = 0; r < R; ++r) {
                         T product = val;
@@ -385,7 +604,7 @@ public:
                 }
     
                 // Merge back using flattened indexing
-                T* global_target_fmat = this->fmats[target_mode - 1];
+                T* global_target_fmat = this->fmats[target_mode - 1].data();
                 for (int i = 0; i < mode_range; ++i) {
                     for (int r = 0; r < R; ++r) {
                         #pragma omp atomic

@@ -2,207 +2,206 @@
 
 ----------Darpa Tensor: (Dimensions: 22,476 x 22,476 x 23,776,223, Non zeros: 28,436,032)----------
 Mode 1 MTTKRP Times:
-    Mean: 10.1548 ms
-    Standard Deviation: 0.0109856 ms
+    Mean: 10.15 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 23.69x
 Mode 2 MTTKRP Times:
-    Mean: 11.1191 ms
-    Standard Deviation: 0.0177829 ms
+    Mean: 11.12 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 56.42x
 Mode 3 MTTKRP Times:
-    Mean: 7.24039 ms
-    Standard Deviation: 0.0341737 ms
+    Mean: 7.24 ms
+    Standard Deviation: 0.03 ms
     Speedup from Naive: 1x (No Speedup)
 
 ----------Freebase Music: (Dimensions: 23,344,784 x 23,344,784 x 166, Non zeros: 99,546,550)----------
 Mode 1 MTTKRP Times:
-    Mean: 23.5112 ms
-    Standard Deviation: 0.0111596 ms
+    Mean: 23.51 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 2.54x
 Mode 2 MTTKRP Times:
-    Mean: 23.8853 ms
-    Standard Deviation: 0.0121601 ms
+    Mean: 23.89 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 3.06x
 Mode 3 MTTKRP Times:
-    Mean: 65.7297 ms
-    Standard Deviation: 6.06369 ms
+    Mean: 65.73 ms
+    Standard Deviation: 6.06 ms
     Speedup from Naive: 35.17x
-
 
 ----------NELL-1: (Dimensions: 2,902,330 x 2,143,368 x 25,495,389, Non zeros: 143,599,551)----------
 Mode 1 MTTKRP Times:
-    Mean: 58.9952 ms
-    Standard Deviation: 0.0224261 ms
+    Mean: 59.00 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 1.84x
 Mode 2 MTTKRP Times:
-    Mean: 62.0332 ms
-    Standard Deviation: 0.0271088 ms
+    Mean: 62.03 ms
+    Standard Deviation: 0.03 ms
     Speedup from Naive: 2.44x
 Mode 3 MTTKRP Times:
-    Mean: 55.3153 ms
-    Standard Deviation: 0.0770763 ms
+    Mean: 55.32 ms
+    Standard Deviation: 0.08 ms
     Speedup from Naive: 1.82x
 
 ----------NELL-2: (Dimensions: 12,092 x 9,184 x 28,818, Non zeros: 76,879,419)----------
 Mode 1 MTTKRP Times:
-    Mean: 25.3827 ms
-    Standard Deviation: 0.0189429 ms
+    Mean: 25.38 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 3.97x
 Mode 2 MTTKRP Times:
-    Mean: 29.6047 ms
-    Standard Deviation: 0.0236605 ms
+    Mean: 29.60 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 7.78x 
 Mode 3 MTTKRP Times:
-    Mean: 15.9179 ms
-    Standard Deviation: 0.0208422 ms
+    Mean: 15.92 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 2.73x
 
 ----------Chicago Crime: (Dimensions: 6,186 x 24 x 77 x 32 Non zeros: 5,330,673)----------
 Mode 1 MTTKRP Times:
-    Mean: 3.5903 ms
-    Standard Deviation: 0.0368061 ms
+    Mean: 3.59 ms
+    Standard Deviation: 0.04 ms
     Speedup from Naive: 0.78x (Slowed Down)
 Mode 2 MTTKRP Times:
-    Mean: 3.45587 ms
-    Standard Deviation: 0.00701699 ms
+    Mean: 3.46 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 13.98x
 Mode 3 MTTKRP Times:
-    Mean: 5.17214 ms
-    Standard Deviation: 0.00685494 ms
+    Mean: 5.17 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 5.62x
 Mode 4 MTTKRP Times:
-    Mean: 9.28142 ms
-    Standard Deviation: 0.0116396 ms
+    Mean: 9.28 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 9.82x
 
 ----------Delcious: (Dimensions: 532,924 x 17,262,471 x 2,480,308 x 1,443 Non zeros: 140,126,220)----------
 Mode 1 MTTKRP Times:
-    Mean: 46.4041 ms
-    Standard Deviation: 0.0263755 ms
+    Mean: 46.40 ms
+    Standard Deviation: 0.03 ms
 Mode 2 MTTKRP Times:
     Mean: 40.88 ms
-    Standard Deviation: 0.0205755 ms
+    Standard Deviation: 0.02 ms
 Mode 3 MTTKRP Times:
-    Mean: 123.973 ms
-    Standard Deviation: 0.0206699 ms
+    Mean: 123.97 ms
+    Standard Deviation: 0.02 ms
 Mode 4 MTTKRP Times:
-    Mean: 175.384 ms
-    Standard Deviation: 0.0724416 ms
+    Mean: 175.38 ms
+    Standard Deviation: 0.07 ms
 
 ----------Enron Emails: (Dimensions: 6,066 x 5,699 x 244,268 x 1,176 Non zeros: 54,202,099)----------
 Mode 1 MTTKRP Times:
-    Mean: 544.629 ms
-    Standard Deviation: 5.44825 ms
+    Mean: 544.63 ms
+    Standard Deviation: 5.45 ms
     Speedup from Naive: 0.97x
 Mode 2 MTTKRP Times:
-    Mean: 82.174 ms
-    Standard Deviation: 0.869884 ms
+    Mean: 82.17 ms
+    Standard Deviation: 0.87 ms
     Speedup from Naive: 0.95x
 Mode 3 MTTKRP Times:
-    Mean: 42.2024 ms
-    Standard Deviation: 0.356733 ms
+    Mean: 42.20 ms
+    Standard Deviation: 0.36 ms
     Speedup from Naive: 0.98x
 Mode 4 MTTKRP Times:
-    Mean: 81.6881 ms
-    Standard Deviation: 0.651384 ms
+    Mean: 81.69 ms
+    Standard Deviation: 0.65 ms
     Speedup from Naive: 0.89x
 
 ----------Flickr: (Dimensions: 319,686 x 28,153,045 x 1,607,191 x 731 Non zeros: 112,890,310)----------
 Mode 1 MTTKRP Times:
-    Mean: 83.2517 ms
-    Standard Deviation: 0.0340722 ms
+    Mean: 83.25 ms
+    Standard Deviation: 0.03 ms
     Speedup from Naive: 1.04x
 Mode 2 MTTKRP Times:
-    Mean: 24.787 ms
-    Standard Deviation: 0.014019 ms
+    Mean: 24.79 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 2.22x
 Mode 3 MTTKRP Times:
-    Mean: 63.7128 ms
-    Standard Deviation: 0.0388012 ms
+    Mean: 63.71 ms
+    Standard Deviation: 0.04 ms
     Speedup from Naive: 3.38x
 Mode 4 MTTKRP Times:
-    Mean: 141.758 ms
-    Standard Deviation: 0.118805 ms
+    Mean: 141.76 ms
+    Standard Deviation: 0.12 ms
     Speedup from Naive: 13.46x
 
 ----------NIPS: (Dimensions: 2,482 x 2,862 x 14,036 x 17 Non zeros: 3,101,609)----------
 Mode 1 MTTKRP Times:
-    Mean: 1.45512 ms
-    Standard Deviation: 0.00416902 ms
+    Mean: 1.45 ms
+    Standard Deviation: 0.00 ms
     Speedup from Naive: 0.93x
 Mode 2 MTTKRP Times:
-    Mean: 2.64813 ms
-    Standard Deviation: 0.00735184 ms
+    Mean: 2.65 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 1.04x
 Mode 3 MTTKRP Times:
-    Mean: 1.95887 ms
-    Standard Deviation: 0.0153533 ms
+    Mean: 1.96 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 1.08x
 Mode 4 MTTKRP Times:
-    Mean: 5.46198 ms
-    Standard Deviation: 0.0114362 ms
+    Mean: 5.46 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 7.26x
 
 ----------Uber pickups: (Dimensions: 183 x 24 x 1,140 x 1,717 Non zeros: 3,309,490)----------
 Mode 1 MTTKRP Times:
-    Mean: 1.91255 ms
-    Standard Deviation: 0.0135158 ms
+    Mean: 1.91 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 3.86x
 Mode 2 MTTKRP Times:
-    Mean: 1.72563 ms
-    Standard Deviation: 0.00934112 ms
+    Mean: 1.73 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 19.46x
 Mode 3 MTTKRP Times:
-    Mean: 13.3203 ms
-    Standard Deviation: 0.061796 ms
+    Mean: 13.32 ms
+    Standard Deviation: 0.06 ms
     Speedup from Naive: 0.93x
 Mode 4 MTTKRP Times:
-    Mean: 15.4322 ms
-    Standard Deviation: 0.0568731 ms
+    Mean: 15.43 ms
+    Standard Deviation: 0.06 ms
     Speedup from Naive: 0.95x
 
 ----------Vast: (Dimensions: 165,427 x 11,374 x 2 x 100 x 89 Non zeros: 26,021,945)----------
 Mode 1 MTTKRP Times:
-   Mean: 7.68264 ms
-    Standard Deviation: 0.0172296 ms
+   Mean: 7.68 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 1.01x
 Mode 2 MTTKRP Times:
-    Mean: 9.58813 ms
-    Standard Deviation: 0.0224108 ms
+    Mean: 9.59 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 0.98x
 Mode 3 MTTKRP Times:
     Mean: 57.189 ms
-    Standard Deviation: 0.0555275 ms
+    Standard Deviation: 0.06 ms
     Speedup from Naive: 23.58x
 Mode 4 MTTKRP Times:
-    Mean: 12.9594 ms
-    Standard Deviation: 0.00917795 ms
+    Mean: 12.96 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 7.77x
 Mode 5 MTTKRP Times:
-    Mean: 12.695 ms
-    Standard Deviation: 0.00972014 ms
+    Mean: 12.70 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 7.07x
 
 ----------LBNL: (Dimensions: 1,605 x 4,198 x 1,631 x 4,209 x 868,131 Non zeros: 1,698,825)----------
 Mode 1 MTTKRP Times:
-    Mean: 28.5717 ms
-    Standard Deviation: 0.168042 ms
+    Mean: 28.57 ms
+    Standard Deviation: 0.17 ms
     Speedup from Naive: 0.96x
 Mode 2 MTTKRP Times:
-    Mean: 71.1916 ms
-    Standard Deviation: 0.0128247 ms
+    Mean: 71.19 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 1.0x
 Mode 3 MTTKRP Times:
-    Mean: 25.2819 ms
-    Standard Deviation: 0.0593904 ms
+    Mean: 25.28 ms
+    Standard Deviation: 0.06 ms
     Speedup from Naive: 0.93x
 Mode 4 MTTKRP Times:
-    Mean: 62.7335 ms
-    Standard Deviation: 0.016116 ms
+    Mean: 62.73 ms
+    Standard Deviation: 0.02 ms
     Speedup from Naive: 1.0x
 Mode 5 MTTKRP Times:
-    Mean: 0.587414 ms
-    Standard Deviation: 0.00634761 ms
+    Mean: 0.59 ms
+    Standard Deviation: 0.01 ms
     Speedup from Naive: 0.63x
 
     

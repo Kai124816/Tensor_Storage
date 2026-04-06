@@ -1,0 +1,1 @@
+Tensor,Mode,SQ_INSTS_VALU,SQ_INSTS_LDS,SIMD_UTILIZATION,MeanOccupancyPerCU,MemUnitStalled,FETCH_SIZE

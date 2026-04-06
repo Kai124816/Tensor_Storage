@@ -170,7 +170,7 @@ __global__ void mttkrp_5D_kernel_naive(
 // Host Wrapper: MTTKRP_BLCO
 //======================================================================
 template<typename T, typename S>
-std::vector<T> MTTKRP_BLCO_Naive(int mode, const Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
+void MTTKRP_BLCO_Naive(int mode, Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
 {
     //Dimensions
     const std::vector<int> dims = sparse_tensor.get_dims();
@@ -304,8 +304,6 @@ std::vector<T> MTTKRP_BLCO_Naive(int mode, const Blco_Tensor<T,S>& sparse_tensor
     size_t out_size = dims[mode-1] * rank;
     std::vector<T> result(out_size);
     HIP_CHECK(hipMemcpy(result.data(), res.d_fmats[mode-1], sizeof(T) * out_size, hipMemcpyDeviceToHost));
-
+    sparse_tensor.reassign_fmat(mode, result);
     deallocate_mttkrp_resources(res, num_blocks);
-
-    return result;
 }

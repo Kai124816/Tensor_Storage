@@ -1,0 +1,5 @@
+Python 
+OpenMP
+ROCm
+g++
+C++17

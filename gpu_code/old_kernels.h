@@ -256,7 +256,7 @@ int wavefront_size = 64)
 // Version 1: Host Wrapper
 //======================================================================
 template<typename T, typename S>
-std::vector<T> MTTKRP_BLCO_v1(int mode, const Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
+void MTTKRP_BLCO_v1(int mode, Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
 {
     const std::vector<int> dims = sparse_tensor.get_dims();
     int rows = dims[0], cols = dims[1], depth = dims[2];
@@ -320,8 +320,8 @@ std::vector<T> MTTKRP_BLCO_v1(int mode, const Blco_Tensor<T,S>& sparse_tensor, s
     size_t out_size = dims[mode-1] * rank;
     std::vector<T> result(out_size);
     HIP_CHECK(hipMemcpy(result.data(), res.d_fmats[mode-1], sizeof(T) * out_size, hipMemcpyDeviceToHost));
+    sparse_tensor.reassign_fmat(mode, result);
     deallocate_mttkrp_resources(res, num_blocks);
-    return result;
 }
 
 //----------------------------Version 2---------------------------------
@@ -526,7 +526,7 @@ int wavefront_size = 64)
 // Version 2: Host Wrapper
 //======================================================================
 template<typename T, typename S>
-std::vector<T> MTTKRP_BLCO_v2(int mode, const Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
+void MTTKRP_BLCO_v2(int mode, Blco_Tensor<T,S>& sparse_tensor, std::vector<float>& times, int iter = 1)
 {
     const std::vector<int> dims = sparse_tensor.get_dims();
     int rows = dims[0], cols = dims[1], depth = dims[2];
@@ -583,6 +583,6 @@ std::vector<T> MTTKRP_BLCO_v2(int mode, const Blco_Tensor<T,S>& sparse_tensor, s
     size_t out_size = dims[mode-1] * rank;
     std::vector<T> result(out_size);
     HIP_CHECK(hipMemcpy(result.data(), res.d_fmats[mode-1], sizeof(T) * out_size, hipMemcpyDeviceToHost));
+    sparse_tensor.reassign_fmat(mode, result);
     deallocate_mttkrp_resources(res, num_blocks);
-    return result;
 }

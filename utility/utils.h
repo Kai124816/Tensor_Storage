@@ -237,42 +237,49 @@ std::vector<NNZ_Entry<T>> read_tensor_file_binary(const std::string &filename, i
 
     const size_t coords_bytes = rank * sizeof(int32_t);
     const size_t value_bytes = sizeof(T);
+    const size_t entry_bytes = coords_bytes + value_bytes;
 
-    for(size_t i = 0; i < nnz; ++i) {
-        NNZ_Entry<T> current_entry;
-        current_entry.coords.resize(rank);
-        
-        // 1. Try to read the 'rank' coordinates
-        file.read(reinterpret_cast<char*>(current_entry.coords.data()), coords_bytes);
-        
-        // Check if we managed to read all 'rank' coordinates
-        if (file.gcount() < static_cast<std::streamsize>(coords_bytes)) {
-            std::cerr << "Error: Entry #" << i << " is incomplete. "
-                      << "Expected " << rank << " coordinates, but only found " 
-                      << (file.gcount() / sizeof(int32_t)) << " indices." << std::endl;
-            break; 
+    const size_t chunk_entries = 1048576; // Read ~1 million entries at a time to reduce syscall overhead
+    std::vector<char> buffer(chunk_entries * entry_bytes);
+
+    size_t entries_read = 0;
+    while (entries_read < nnz && file) {
+        size_t entries_to_read = std::min(chunk_entries, static_cast<size_t>(nnz - entries_read));
+        file.read(buffer.data(), entries_to_read * entry_bytes);
+        size_t bytes_read = file.gcount();
+        size_t current_chunk_entries = bytes_read / entry_bytes;
+
+        const char* ptr = buffer.data();
+        for (size_t i = 0; i < current_chunk_entries; ++i) {
+            NNZ_Entry<T> current_entry;
+            current_entry.coords.resize(rank);
+            
+            // 1. Read coordinates
+            std::copy(ptr, ptr + coords_bytes, reinterpret_cast<char*>(current_entry.coords.data()));
+            ptr += coords_bytes;
+            
+            // 2. Read value
+            std::copy(ptr, ptr + value_bytes, reinterpret_cast<char*>(&current_entry.value));
+            ptr += value_bytes;
+            
+            // Convert from 1-indexed to 0-indexed
+            for(auto& c : current_entry.coords) {
+                c -= 1; 
+            }
+
+            entries.push_back(std::move(current_entry));
         }
         
-        // 2. Try to read the '1' value
-        file.read(reinterpret_cast<char*>(&current_entry.value), value_bytes);
-        
-        // Check if we managed to read the value associated with those coordinates
-        if (file.gcount() < static_cast<std::streamsize>(value_bytes)) {
-            std::cerr << "Error: Entry #" << i << " is incomplete. "
-                      << "Read " << rank << " coordinates, but the value is missing." << std::endl;
+        entries_read += current_chunk_entries;
+        if (current_chunk_entries < entries_to_read) {
+            std::cerr << "Warning: Reached end of file or read error before reading all requested entries. "
+                      << "Only read " << entries_read << " entries." << std::endl;
             break;
         }
-        
-        // Convert from 1-indexed to 0-indexed
-        for(auto& c : current_entry.coords) {
-            c -= 1; 
-        }
-
-        entries.push_back(std::move(current_entry));
     }
 
-    if (entries.size() < static_cast<size_t>(nnz)) {
-        std::cerr << "Warning: Only " << entries.size() << " full entries were read out of " 
+    if (entries_read < static_cast<size_t>(nnz)) {
+        std::cerr << "Warning: Only " << entries_read << " full entries were read out of " 
                   << nnz << " requested." << std::endl;
     }
 
@@ -404,8 +411,8 @@ void print_tensor_stats(const std::vector<NNZ_Entry<T>>& entry_vec) {
  * entries: The sparse tensor non-zero entries
  */
 template<typename T>
-T* MTTKRP_Naive(int mode, T* M, const std::vector<T*>& factors, int R,
-                   const std::vector<NNZ_Entry<T>>& entries) 
+std::vector<T> MTTKRP_Naive(int mode, std::vector<T> M, const std::vector<std::vector<T>>& factors, int R,
+const std::vector<NNZ_Entry<T>>& entries) 
 {
     int target_dim_idx = mode - 1;   // 0-indexed mode
     int num_modes = factors.size(); // Tensor order (N)
@@ -484,7 +491,7 @@ T* mat_to_array(T** m1, int rows, int cols) {
 }
 
 template<typename T>
-void print_matrix_to_file(const T* data, size_t rows, size_t cols, 
+void print_matrix_to_file(const std::vector<T> data, size_t rows, size_t cols, 
                        const std::string& filename, const std::string& mat_name,
                        int precision = 6, int width = 12) {
     std::ofstream outfile(filename, std::ios::app);
@@ -539,17 +546,8 @@ bool compare_arrays(T* a1, T* a2, int size) {
     return true;
 }
 
-// Compares floating point/double arrays and outputs the absolute difference
 template<typename T>
-double compare_arrays_float(T* a1, T* a2, int size) {
-    double diff = 0.0;
-    for (int i = 0; i < size; i++)
-            diff += std::abs(a1[i] - a2[i]);
-    return diff / size;
-}
-
-template<typename T>
-void print_differences_to_file(const T* m1, const T* m2, size_t rows, size_t cols, 
+void print_differences_to_file(const std::vector<T> m1, const std::vector<T> m2, size_t rows, size_t cols, 
                        const std::string& filename, const std::string& m1_name,
                        const std::string& m2_name, int precision = 6, int width = 12) {
     std::ofstream outfile(filename, std::ios::app);
@@ -946,79 +944,67 @@ std::unordered_map<int, int> find_anomalies_mad(const std::vector<float>& data, 
 }
 
 // ==========================
-// .txt file generator
+// Random Array Generator
 // ==========================
-//Generates a .txt file with random entries. The file is supposed to represent a vectorized matrix
-void generate_vmat_file(const std::string& filename, int num_entries, std::pair<int, int> range) 
-{
-    if (num_entries <= 0) {
-        std::cerr << "Error: num_entries must be positive." << std::endl;
-        return;
-    }
-    if (range.first > range.second) {
-        std::cerr << "Error: Invalid range [" << range.first << ", " << range.second << "]." << std::endl;
-        return;
-    }
-
-    std::ofstream outfile(filename);
-    if (!outfile.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return;
-    }
-
-    std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(range.first, range.second);
-
-    for (int i = 0; i < num_entries; ++i) {
-        outfile << dist(rng) << "\n";
-    }
-
-    outfile.close();
-    std::cout << "Generated " << num_entries << " entries in " << filename << std::endl;
-}
-
-// ==========================
-// .txt file reader
-// ==========================
-//Reads a .txt file to an array of size arr_size.
-//If arr_size exceeds the number of lines in the file,
-//wraps back to the first entry (circular/modulo indexing).
+// Generates a random array of a given size, with numbers in a given range.
 template<typename T>
-T* file_to_array(const std::string& filename, int arr_size)
-{
-    if (arr_size <= 0) {
-        std::cerr << "Error: arr_size must be positive." << std::endl;
-        return nullptr;
+std::vector<T> generate_random_array(int size, T min_val, T max_val) {
+    if (size <= 0) {
+        throw std::invalid_argument("generate_random_array: size must be positive.");
+    }
+    if (min_val > max_val) {
+        throw std::invalid_argument("generate_random_array: invalid range [" + 
+                                    std::to_string(min_val) + ", " + std::to_string(max_val) + "].");
     }
 
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return nullptr;
-    }
+    std::vector<T> arr(size);
+    std::mt19937 rng(std::random_device{}());
 
-    // Read all values from the file into a buffer
-    std::vector<T> buffer;
-    T val;
-    while (file >> val) {
-        buffer.push_back(val);
-    }
-    file.close();
-
-    if (buffer.empty()) {
-        std::cerr << "Error: File " << filename << " is empty or contains no valid entries." << std::endl;
-        return nullptr;
-    }
-
-    // Allocate output array and fill with wrap-around (circular indexing)
-    T* arr = new T[arr_size];
-    size_t file_size = buffer.size();
-    for (int i = 0; i < arr_size; ++i) {
-        arr[i] = buffer[i % file_size];
+    if constexpr (std::is_integral_v<T>) {
+        std::uniform_int_distribution<T> dist(min_val, max_val);
+        for (int i = 0; i < size; ++i) {
+            arr[i] = dist(rng);
+        }
+    } else if constexpr (std::is_floating_point_v<T>) {
+        std::uniform_real_distribution<T> dist(min_val, max_val);
+        for (int i = 0; i < size; ++i) {
+            arr[i] = dist(rng);
+        }
+    } else {
+        throw std::invalid_argument("generate_random_array: unsupported type.");
     }
 
     return arr;
 }
+
+// Generates a random array using a seed with numbers in a given range.
+std::vector<unsigned int> SEEDS = {1,2,3,4,5};
+
+template<typename T>
+std::vector<T> generate_random_array_seed(int size, T min_val, T max_val, unsigned int seed) 
+{
+    // The engine is seeded deterministically. Same seed = same sequence.
+    std::mt19937 engine(seed);
+    
+    // Create distribution based on whether T is an integer or floating point
+    std::vector<T> rand_arr(size);
+
+    if constexpr (std::is_integral<T>::value) {
+        std::uniform_int_distribution<T> dist(min_val, max_val);
+        for(int i = 0; i < size; i++) {
+            rand_arr[i] = dist(engine);
+        }
+    } else {
+        std::uniform_real_distribution<T> dist(min_val, max_val);
+        for(int i = 0; i < size; i++) {
+            rand_arr[i] = dist(engine);
+        }
+    }
+
+    return rand_arr;
+}
+
+
 
 #endif
 

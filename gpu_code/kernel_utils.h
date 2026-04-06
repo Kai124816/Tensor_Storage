@@ -52,6 +52,25 @@ int get_compute_units() {
     return props.multiProcessorCount;
 }
 
+inline int get_total_simd_units(int deviceId = 0) {
+    hipDeviceProp_t props;
+    HIP_CHECK(hipGetDeviceProperties(&props, deviceId));
+
+    int cu_count = props.multiProcessorCount;
+    int simds_per_cu = 4; // Default for CDNA/GCN (4 SIMD16 per CU)
+
+    std::string arch(props.gcnArchName);
+
+    // RDNA architectures (gfx10xx for RDNA1/2, gfx11xx for RDNA3)
+    if (arch.find("gfx10") != std::string::npos || arch.find("gfx11") != std::string::npos) {
+        simds_per_cu = 2; // RDNA architectures typically have 2 SIMD32s per CU
+    } else if (arch.find("gfx9") != std::string::npos) {
+        simds_per_cu = 4; // CDNA/Vega/GCN architectures have 4 SIMD16s per CU
+    }
+
+    return cu_count * simds_per_cu;
+}
+
 inline double get_gpu_memory_capacity() {
     int deviceCount = 0;
     HIP_CHECK(hipGetDeviceCount(&deviceCount));
@@ -166,7 +185,7 @@ inline MTTKRP_Device_Resources<T> allocate_mttkrp_resources(const Blco_Tensor<T,
     const std::vector<BLCO_BLOCK_CPU<T>> blco_tensor = sparse_tensor.get_blco();
     const std::vector<int> dims = sparse_tensor.get_dims();
     const int factor_rank = sparse_tensor.get_factor_rank(); // Decomposition rank (R)
-    const std::vector<T*> h_fmats = sparse_tensor.get_fmats();
+    const std::vector<std::vector<T>> h_fmats = sparse_tensor.get_fmats();
     
     res.rank_dims = dims.size(); // N modes
     int num_blocks = blco_tensor.size();
@@ -183,7 +202,7 @@ inline MTTKRP_Device_Resources<T> allocate_mttkrp_resources(const Blco_Tensor<T,
         HIP_CHECK(hipMalloc(&res.d_fmats[i], sizeof(T) * fmat_size));
         
         // Copy the initial factor matrix data from host to device
-        HIP_CHECK(hipMemcpy(res.d_fmats[i], h_fmats[i], 
+        HIP_CHECK(hipMemcpy(res.d_fmats[i], h_fmats[i].data(), 
                             sizeof(T) * fmat_size, hipMemcpyHostToDevice));
     }
 
@@ -273,28 +292,27 @@ inline void free_blocks_from_gpu(BLCO_BLOCK_GPU<T>* gpu_block_arr, int num_block
 // Grid/Block Dimension Helpers
 // ----------------------------
 
-// Compute grid/block dimensions when NOT using shared memory (smem).
-inline std::pair<int,int> determine_dimensions_no_smem(uint64_t non_zeros, int wf_sz = 64)
+// Compute grid/block dimensions for the one to one approach when NOT using shared memory (smem).
+inline std::pair<int,int> determine_dimensions_no_smem(uint64_t non_zeros, int wf_sz = 64, int block_size = 256)
 {
     std::pair<int,int> dims;
 
-    if(non_zeros <= 768){
+    if(non_zeros <= block_size){
         dims.first = 1;  // only one block
         int mul = non_zeros / wf_sz;
         if(mul * wf_sz < non_zeros) mul++;  // round up to next multiple of wf_sz
         dims.second = wf_sz * mul;          // threads per block
     }
     else{
-        dims.first = non_zeros / 768;       // number of blocks
-        if(non_zeros % 768 != 0) dims.first++;
-        dims.second = 768;                  // threads per block fixed at 320
+        dims.first = non_zeros / block_size;       // number of blocks
+        if(non_zeros % block_size != 0) dims.first++;
+        dims.second = block_size;                  // threads per block fixed at 320
     }
 
     return dims;
 }
 
-// Compute grid/block dimensions when using shared memory (smem).
-// Adds an extra check to ensure the shared memory requirements are met
+// Compute grid/block dimensions for the one to one appraoch when using shared memory (smem).
 template<typename T>
 inline std::pair<int,int> determine_dimensions_smem(uint64_t non_zeros, int ui, int tensor_rank, int wf_sz = 64)
 {
@@ -334,6 +352,70 @@ inline std::pair<int,int> determine_dimensions_smem(uint64_t non_zeros, int ui, 
     return dims;
 }
 
+// Compute grid/block dimensions when using the vectorized approach.
+template<typename T>
+inline std::pair<int,int> determine_dimensions_vectorized(uint64_t non_zeros, int decomposition_rank, 
+int stride, int block_size = 256)
+{
+    std::pair<int,int> dims;
+    int non_zeros_per_block = (block_size / decomposition_rank) * stride;
+    // ensure ceiling division
+    int num_blocks = (non_zeros + non_zeros_per_block - 1) / non_zeros_per_block;
+    dims.first = num_blocks; dims.second = block_size;
+    return dims;
+}
+
+// Compute grid/block dimensions when using the vectorized approach.
+template<typename T>
+inline std::pair<int,int> determine_dimensions_coalesced_group(uint64_t non_zeros, size_t shmem_size, int rank, int block_size = 256)
+{
+    std::pair<int,int> dims;
+    dims.first = -1; dims.second = -1;
+    int total_shmem = ((rank + 2) * block_size * sizeof(int)) + (block_size * sizeof(T));
+
+    if(total_shmem < shmem_size){
+        dims.first = (non_zeros + block_size - 1) / block_size; dims.second = block_size;
+    }
+    else{
+        for(int i = block_size / 2; i >= 64; i = i / 2){
+            if((total_shmem / 2) < shmem_size){
+                dims.first = (non_zeros - 1) / i; dims.second = i;
+                break;
+            }
+        }
+    }
+
+    return dims;
+}
+
+// ----------------------------
+// Stride Functions
+// ----------------------------
+
+//Determine the Stride for the vectorized kernel
+inline int determine_stride(int total_simd, int rank, uint64_t nnz)
+{
+    int ideal_wavefronts_per_simd = 16; //Default Ideal Value Wavefront per SIMD
+    int wf_size = 64; //On AMD the wavefront size is 64
+    
+    int nnz_per_wf = std::max(1, wf_size / rank); //Non zeros per wavefront
+    
+    uint64_t total_wfs = (nnz + nnz_per_wf - 1) / nnz_per_wf; //Total number of wavefronts (assuming stride == 1)
+    
+    // Total wavefronts per SIMD naturally given stride=1
+    int wf_per_simd = total_wfs / total_simd; 
+    
+    // If our natural wavefronts per SIMD is small, we want to maintain as many 
+    // wavefronts as possible to keep occupancy high. So we use a stride of 1.
+    if(wf_per_simd < 32) {
+        return 1;
+    }
+    
+    // If we have too many wavefronts, we compress the work.
+    return std::max(1, wf_per_simd / ideal_wavefronts_per_simd);
+}
+
+
 // ----------------------------
 // Device-Side Utilities
 // ----------------------------
@@ -350,7 +432,7 @@ __device__ inline int ceiling_log2(int x)
     return res;
 }
 
-// Find which block of the BLCO tensor the current thread's index falls into.
+// Find which entry of the BLCO tensor the current thread's index falls into.
 template<typename T>
 __device__ inline BLCO_ENTRY<T> extract_entry(BLCO_BLOCK_GPU<T>* tensor, int num_blocks, int& block)
 {
@@ -366,6 +448,23 @@ __device__ inline BLCO_ENTRY<T> extract_entry(BLCO_BLOCK_GPU<T>* tensor, int num
     }
     return BLCO_ENTRY<T>{0,0}; // invalid just return empty entry
 }
+
+
+// Find which entry of the BLCO tensor the current thread's index falls into.
+template<typename T>
+__device__ inline BLCO_ENTRY<T> extract_entry_by_idx(BLCO_BLOCK_GPU<T>* tensor, int num_blocks, uint64_t idx, int& block)
+{
+    uint64_t prefix_sum = 0;
+    for(int i = 0; i < num_blocks; i++){
+        if(idx < prefix_sum + tensor[i].size){
+            block = tensor[i].block;
+            return tensor[i].entries[idx - prefix_sum];
+        }
+        prefix_sum += tensor[i].size;
+    }
+    return BLCO_ENTRY<T>{0, (T)0}; // invalid just return empty entry
+}
+
 
 //Find the block in the CSR format
 __device__ inline int find_block_csr(uint64_t* block_ptr, int block_offset, int global_idx, int num_blocks) 
@@ -427,7 +526,8 @@ __device__ inline int extract_mode(uint64_t linear_idx, int mode,
         output &= mask; // Ensure we only keep the bits for this mode
     }
 
-    return static_cast<int>(output);
+    int casted_output = static_cast<int>(output);
+    return casted_output;
 }
 
 // ----------------------------

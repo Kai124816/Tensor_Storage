@@ -8,7 +8,7 @@ Freebase Music: https://frostt-tensors.s3.us-east-2.amazonaws.com/FB-M/fb-m.tns.
 Dimensions: 23,344,784 x 23,344,784 x 166, Non zeros: 99,546,550
 Passed: Yes
 
-NELL-1: 
+NELL-1: https://s3.us-east-2.amazonaws.com/frostt/frostt_data/nell/nell-1.tns.gz 
 Dimensions: 2,902,330 x 2,143,368 x 25,495,389, Non zeros: 143,599,552
 Passed: Yes
 
@@ -57,55 +57,53 @@ Passed: No
 
 
 ================================================================================
-BLCO TENSOR BENCHMARK INSTRUCTIONS
-Standard Format: ./benchmark_blco kernel [path] [mode] [nnz] [dimensions...] [type] [iterations]
+MTTKRP BENCHMARKING INSTRUCTIONS
 ================================================================================
 
 ---------- Three Dimensional Tensors ----------
 
 Darpa
-./benchmark_blco kernel ../../tensors/darpa.bin 1 28436032 22476 22476 23776223 int 100
+./<binary_name> <version> ../../tensors/darpa.bin <mode> 28436032 22476 22476 23776223 100 int
 
 Freebase Music
-./benchmark_blco kernel ../../tensors/fb-m.bin 1 99546550 23344784 23344784 166 int 100
+./<binary_name> <version> ../../tensors/fb-m.bin <mode> 99546550 23344784 23344784 166 100 int
 
 NELL-1
-./benchmark_blco kernel ../../tensors/nell-1.bin 1 143599552 2902330 2143368 25495389 float 100
+./<binary_name> <version> ../../tensors/nell-1.bin <mode> 143599552 2902330 2143368 25495389 100 <int|float>
 
 NELL-2
-./benchmark_blco kernel ../../tensors/nell-2.bin 1 76879419 12092 9184 28818 int 100 (Might change to float)
+./<binary_name> <version> ../../tensors/nell-2.bin <mode> 76879419 12092 9184 28818 100 <int|float>
 
 
 ---------- Four Dimensional Tensors ----------
 
 Chicago Crime
-./benchmark_blco kernel ../../tensors/chicago_crime.bin 1 5330673 6186 24 77 32 int 100
+./<binary_name> <version> ../../tensors/chicago_crime.bin <mode> 76879419 12092 9184 28818 100 int
 
 Delicious
-./benchmark_blco kernel ../../tensors/delicious.bin 1 140126220 532924 17262471 2480308 1443 int 100
+./<binary_name> <version> ../../tensors/delicious.bin <mode> 140126220 532924 17262471 2480308 1443 100 int
 
 Enron Emails
-./benchmark_blco kernel ../../tensors/enron.bin 1 54202099 6066 5699 244268 1176 int 100
+./<binary_name> <version> ../../tensors/enron.bin 1 54202099 6066 5699 244268 1176 100 int
 
 Flickr
-./benchmark_blco kernel ../../tensors/flickr.bin 1 112890310 319686 28153045 1607191 731 int 100
+./<binary_name> <version> ../../tensors/flickr.bin 1 112890310 319686 28153045 1607191 731 100 int
 
 NIPS
-./benchmark_blco kernel ../../tensors/nips.bin 1 3101609 2482 2862 14036 17 int 100
+./<binary_name> <version> ../../tensors/nips.bin 1 3101609 2482 2862 14036 17 100 int
 
 Uber Pickups
-./benchmark_blco kernel ../../tensors/uber_pickups.bin 1 3309490 183 24 1140 1717 int 100
+./<binary_name> <version> ../../tensors/uber_pickups.bin 1 3309490 183 24 1140 1717 100 int
 
 
 ---------- Five Dimensional Tensors ----------
 
 VAST Tensor
-./benchmark_blco kernel ../../tensors/vast.bin 1 26021945 165427 11374 2 100 89 int 100
+./<binary_name> <version> ../../tensors/vast.bin 1 26021945 165427 11374 2 100 89 100 int
 
 LBNL Network
-./benchmark_blco kernel ../../tensors/lbnl.bin 1 1698825 1605 4198 1631 4209 868131 float 100
+./<binary_name> <version> ../../tensors/lbnl.bin 1 1698825 1605 4198 1631 4209 868131 100 <int|float>
 
 LANL
-./benchmark_blco kernel ../../tensors/lanl.bin 1 69082467 3761 11154 8711 75147 9 int 100
-
+./<binary_name> <version>  ../../tensors/lanl.bin 1 69082467 3761 11154 8711 75147 9 100 int
 

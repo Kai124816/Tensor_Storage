@@ -1,0 +1,16 @@
+jobs:
+  - pmc: ["SQ_INSTS_VALU", "SQ_INSTS_LDS"]
+    kernel_include_regex: ".*kernel*"
+    truncate_kernels: true
+    output_format: ["csv"]
+    output_file: "out"
+  - pmc: ["SIMD_UTILIZATION", "MeanOccupancyPerCU"]
+    kernel_include_regex: ".*kernel*"
+    truncate_kernels: true
+    output_format: ["csv"]
+    output_file: "out"
+  - pmc: ["MemUnitStalled", "FETCH_SIZE"]
+    kernel_include_regex: ".*kernel*"
+    truncate_kernels: true
+    output_format: ["csv"]
+    output_file: "out"
