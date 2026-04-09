@@ -42,7 +42,7 @@ inline size_t get_max_shared_memory() {
     return props.sharedMemPerBlock;
 }
 
-int get_compute_units() {
+inline int get_compute_units() {
     int deviceId = 0; // Use the first GPU
     hipDeviceProp_t props;
     

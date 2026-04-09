@@ -685,7 +685,7 @@ void print_matrix(T** matrix, int rows, int cols, int width) {
 // ==========================
 
 // Print x least-significant bits of a 128-bit value
-void print_lsb_bits(__uint128_t value, int x) {
+inline void print_lsb_bits(__uint128_t value, int x) {
     if (x < 1 || x > 128) {
         std::cerr << "Error: x must be between 1 and 128\n";
         return;
@@ -698,7 +698,7 @@ void print_lsb_bits(__uint128_t value, int x) {
 }
 
 // Print x least-significant bits of a 64-bit value
-void print_uint64(uint64_t value, int x) {
+inline void print_uint64(uint64_t value, int x) {
     if (x < 1 || x > 64) {
         std::cerr << "Error: x must be between 1 and 64\n";
         return;
@@ -711,7 +711,7 @@ void print_uint64(uint64_t value, int x) {
 }
 
 // Convert 128-bit unsigned integer to scientific notation string
-std::string uint128_to_sci_string(__uint128_t value, int precision) {
+inline std::string uint128_to_sci_string(__uint128_t value, int precision) {
     if (value == 0) return "0.0e+0";
 
     __uint128_t temp = value;
@@ -739,7 +739,7 @@ std::string uint128_to_sci_string(__uint128_t value, int precision) {
  * Calculates the mean and standard deviation of a float vector.
  * Uses OpenMP for parallel reduction, matching the style of tensor_impl.h.
  */
-StatsResult calculate_statistics(const std::vector<float>& data) {
+inline StatsResult calculate_statistics(const std::vector<float>& data) {
     if (data.empty()) {
         return {0.0f, 0.0f};
     }
@@ -766,7 +766,7 @@ StatsResult calculate_statistics(const std::vector<float>& data) {
 }
 
 
-std::vector<float> clean_data(const std::vector<float>& data, StatsResult stats) {
+inline std::vector<float> clean_data(const std::vector<float>& data, StatsResult stats) {
 
     float mean = stats.mean;
     float sd = stats.std_dev;
@@ -795,7 +795,7 @@ std::vector<float> clean_data(const std::vector<float>& data, StatsResult stats)
  * @param epsilon Absolute difference floor to ignore micro-jitter.
  * @return A vector containing the "clean" runtimes.
  */
-std::vector<float> clean_data_mad(const std::vector<float>& data, float sigma_threshold = 4.0f, float epsilon = 0.005f) {
+inline std::vector<float> clean_data_mad(const std::vector<float>& data, float sigma_threshold = 4.0f, float epsilon = 0.005f) {
     if (data.empty()) return {};
     if (data.size() == 1) return data;
 
@@ -847,7 +847,7 @@ std::vector<float> clean_data_mad(const std::vector<float>& data, float sigma_th
  * The pre-calculated mean and standard deviation
  * A map where keys are {3, 4, 5} and values are the count of anomalies
  */
-std::unordered_map<int, int> find_anomalies(const std::vector<float>& latencies, StatsResult stats, float min_meaningful_ms = 0.005f) // e.g., ignore anything smaller than 5 microseconds 
+inline std::unordered_map<int, int> find_anomalies(const std::vector<float>& latencies, StatsResult stats, float min_meaningful_ms = 0.005f) // e.g., ignore anything smaller than 5 microseconds 
 {
     std::unordered_map<int, int> anomaly_counts = {{3, 0}, {4, 0}, {5, 0}};
     
@@ -875,7 +875,7 @@ std::unordered_map<int, int> find_anomalies(const std::vector<float>& latencies,
 }
 
 // Helper function to calculate nCr (Binomial Coefficient)
-double binomialCoefficient(int n, int k) {
+inline double binomialCoefficient(int n, int k) {
     if (k < 0 || k > n) return 0;
     if (k == 0 || k == n) return 1;
     if (k > n / 2) k = n - k; // Take advantage of symmetry
@@ -888,13 +888,13 @@ double binomialCoefficient(int n, int k) {
 }
 
 // Function to calculate Binomial Probability
-double binomialProbability(int n, int k, double p) {
+inline double binomialProbability(int n, int k, double p) {
     double nCr = binomialCoefficient(n, k);
     double prob = nCr * std::pow(p, k) * std::pow(1.0 - p, n - k);
     return prob;
 }
 
-MADResult calculate_mad(std::vector<float> data) {
+inline MADResult calculate_mad(std::vector<float> data) {
     if (data.empty()) return {0.0f, 0.0f};
 
     // 1. Calculate Median
@@ -918,7 +918,7 @@ MADResult calculate_mad(std::vector<float> data) {
     return {median, mad * 1.4826f};
 }
 
-std::unordered_map<int, int> find_anomalies_mad(const std::vector<float>& data, MADResult res, float epsilon = 0.005f) {
+inline std::unordered_map<int, int> find_anomalies_mad(const std::vector<float>& data, MADResult res, float epsilon = 0.005f) {
     std::unordered_map<int, int> anomaly_counts = {{3, 0}, {4, 0}, {5, 0}};
 
     float thresh3 = 3.0f * res.mad_sigma;
@@ -978,7 +978,7 @@ std::vector<T> generate_random_array(int size, T min_val, T max_val) {
 }
 
 // Generates a random array using a seed with numbers in a given range.
-std::vector<unsigned int> SEEDS = {1,2,3,4,5};
+inline std::vector<unsigned int> SEEDS = {1,2,3,4,5};
 
 template<typename T>
 std::vector<T> generate_random_array_seed(int size, T min_val, T max_val, unsigned int seed) 

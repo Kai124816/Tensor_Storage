@@ -14,23 +14,23 @@
 #endif
 
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_DEFAULT)
-#include "../../gpu_code/one_to_one_kernels.h"
+#include "../../gpu_code/one_to_one/one_to_one_kernels.h"
 #endif
 
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_IN_PROGRESS)
-#include "../../gpu_code/in_progress.h"  
+#include "../../gpu_code/in_progress/in_progress.h"  
 #endif
 
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_NAIVE)
-#include "../../gpu_code/naive_kernels.h"  
+#include "../../gpu_code/naive/naive_kernels.h"  
 #endif
 
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V1) || defined(MTTKRP_VERSION_V2)
-#include "../../gpu_code/old_kernels.h"  
+#include "../../gpu_code/old/old_kernels.h"  
 #endif
 
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_VECTORIZED)
-#include "../../gpu_code/vectorized_kernels.h"  
+#include "../../gpu_code/vectorized/vectorized_kernels.h"  
 #endif
 
 

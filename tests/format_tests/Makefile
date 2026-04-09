@@ -6,8 +6,8 @@ CXX_2_FLAGS = -std=c++17 -g -O3 --offload-arch=gfx942 -fopenmp
 #Note the --offload-arch=gfx942 flag is specified for the MI300 GPU
 
 # Targets
-CORRECTNESS_TARGET = correctness
-TIMING_TARGET = timing
+CORRECTNESS_TARGET = correctness_bin
+TIMING_TARGET = timing_bin
 
 # Sources
 CORRECTNESS_SRC = correctness.cc

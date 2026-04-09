@@ -1,7 +1,6 @@
 #ifndef BLCO_H
 #define BLCO_H
 
-
 #include <vector>
 #include <utility>
 #include <unordered_map>
@@ -81,11 +80,12 @@ protected:
         std::sort(indices.begin(), indices.end(),
                   [&](size_t i, size_t j) { return p.first[i] < p.first[j]; });
 
-        std::vector<S> sorted_first;
-        std::vector<T> sorted_second;
-        for (size_t i : indices) {
-            sorted_first.push_back(p.first[i]);
-            sorted_second.push_back(p.second[i]);
+        size_t n = indices.size();
+        std::vector<S> sorted_first(n);
+        std::vector<T> sorted_second(n);
+        for (size_t k = 0; k < n; ++k) {
+            sorted_first[k]  = p.first[indices[k]];
+            sorted_second[k] = p.second[indices[k]];
         }
 
         p.first = std::move(sorted_first);
@@ -95,9 +95,10 @@ protected:
     void determine_bit_widths()
     {
         int bit_sum = 0;
+        bit_widths.resize(this->rank);
         for(int i = 0; i < this->rank; i++){
             int bits_needed = ceiling_log2(this->dims[i]);
-            bit_widths.push_back(bits_needed);
+            bit_widths[i] = bits_needed;
             bit_sum += bits_needed;
         }
         if(bit_sum > 64) blocks_needed = true;
@@ -111,6 +112,9 @@ protected:
     {
         if (std::accumulate(bit_widths.begin(), bit_widths.end(), 0) == 0) return;
 
+        bitmasks.resize(this->rank);
+        block_modes.reserve(this->rank); // at most rank modes can overflow
+
         int total_bits = 0;
         for (int i = 0; i < this->rank; ++i) {
             uint64_t mask;
@@ -120,7 +124,7 @@ protected:
             } else {
                 mask = (uint64_t(1) << w) - 1;
             }
-            bitmasks.push_back(mask);
+            bitmasks[i] = mask;
 
             total_bits += w;
             if (total_bits > 64) {
@@ -476,10 +480,10 @@ public:
         for (const auto& block_cpu : blco_tensor) {
             int block_num = block_cpu.block;
             for(size_t i = 0; i < block_cpu.entries.size(); i++){
-                std::vector<int> indices;
+                std::vector<int> indices(this->rank);
                 uint64_t blco_idx = block_cpu.entries[i].index;
                 for(int j = 0; j < this->rank; j++){
-                    indices.push_back(get_mode_idx_blco(blco_idx, j + 1, block_num));
+                    indices[j] = get_mode_idx_blco(blco_idx, j + 1, block_num);
                 }
                 entries[entry_idx].coords = indices;
                 entries[entry_idx].value = block_cpu.entries[i].value;

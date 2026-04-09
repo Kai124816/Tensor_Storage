@@ -3,6 +3,13 @@ CXX = hipcc
 CXXFLAGS = -std=c++17 -g -O3 --offload-arch=gfx942 -fopenmp
 #Note the --offload-arch=gfx942 flag is specified for the MI300 GPU
 
+# Directories
+ROOT_DIR = ../..
+GPU_DIR = $(ROOT_DIR)/gpu_code
+TENSOR_DIR = $(ROOT_DIR)/tensor_implementations
+UTILITY_DIR = $(ROOT_DIR)/utility
+BUILD_DIR = build
+
 # Version selection (default: all)
 # Options: all, default, in_progress, naive, v1, v2, vectorized, alto
 VERSION ?= all
@@ -31,31 +38,84 @@ else
     CXXFLAGS += -DMTTKRP_VERSION_ALL
 endif
 
-
 # Targets
-CORRECTNESS_TARGET = correctness_$(VERSION)
-TIMING_TARGET = timing_$(VERSION)
+CORRECTNESS_TARGET = correctness_$(VERSION)_bin
+TIMING_TARGET = timing_$(VERSION)_bin
 
-# Sources
-CORRECTNESS_SRC = correctness.cc
-TIMING_SRC = timing.cc
+# Header dependencies (tracked for rebuilds)
+GPU_HEADERS = $(wildcard $(GPU_DIR)/*.h)
+TENSOR_HEADERS = $(wildcard $(TENSOR_DIR)/*.h)
+UTILITY_HEADERS = $(wildcard $(UTILITY_DIR)/*.h)
+ALL_HEADERS = $(GPU_HEADERS) $(TENSOR_HEADERS) $(UTILITY_HEADERS) checksums.h
+
+# GPU kernel source files (compiled separately)
+GPU_SRCS = $(GPU_DIR)/vectorized/vectorized_kernels.cc \
+           $(GPU_DIR)/one_to_one/one_to_one_kernels.cc \
+           $(GPU_DIR)/naive/naive_kernels.cc \
+           $(GPU_DIR)/old/old_kernels.cc \
+           $(GPU_DIR)/in_progress/in_progress.cc
+
+# GPU object files (in build directory)
+GPU_OBJS = $(BUILD_DIR)/vectorized_kernels.o \
+           $(BUILD_DIR)/one_to_one_kernels.o \
+           $(BUILD_DIR)/naive_kernels.o \
+           $(BUILD_DIR)/old_kernels.o \
+           $(BUILD_DIR)/in_progress.o
+
+# Test object files (versioned)
+CORRECTNESS_OBJ = $(BUILD_DIR)/correctness_$(VERSION).o
+TIMING_OBJ = $(BUILD_DIR)/timing_$(VERSION).o
 
 # Default target
 all: $(CORRECTNESS_TARGET) $(TIMING_TARGET)
 
-# Alias targets for convenience
+# Alias targets
 correctness: $(CORRECTNESS_TARGET)
 timing: $(TIMING_TARGET)
 
-# Build rules
-$(CORRECTNESS_TARGET): $(CORRECTNESS_SRC)
-	$(CXX) $(CXXFLAGS) $< -o $@
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-$(TIMING_TARGET): $(TIMING_SRC)
-	$(CXX) $(CXXFLAGS) $< -o $@
+#----------------------------------------------------------------------
+# GPU kernel compilation (version-independent, compiled once)
+#----------------------------------------------------------------------
+$(BUILD_DIR)/vectorized_kernels.o: $(GPU_DIR)/vectorized/vectorized_kernels.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/one_to_one_kernels.o: $(GPU_DIR)/one_to_one/one_to_one_kernels.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/naive_kernels.o: $(GPU_DIR)/naive/naive_kernels.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/old_kernels.o: $(GPU_DIR)/old/old_kernels.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/in_progress.o: $(GPU_DIR)/in_progress/in_progress.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+#----------------------------------------------------------------------
+# Test driver compilation (version-specific, recompiled per VERSION)
+#----------------------------------------------------------------------
+$(CORRECTNESS_OBJ): correctness.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(TIMING_OBJ): timing.cc $(ALL_HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+#----------------------------------------------------------------------
+# Link: GPU objects + test driver → final executable
+#----------------------------------------------------------------------
+$(CORRECTNESS_TARGET): $(CORRECTNESS_OBJ) $(GPU_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(TIMING_TARGET): $(TIMING_OBJ) $(GPU_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
 .PHONY: all clean correctness timing
 
 # Cleanup
 clean:
-	rm -f correctness_* timing_* correctness timing
+	rm -f correctness_* timing_*
+	rm -rf $(BUILD_DIR)

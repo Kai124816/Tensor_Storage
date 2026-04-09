@@ -17,6 +17,7 @@
 #include <chrono>
 #include <omp.h>
 #include <fstream>
+#include "../utility/utils.h"
 
 //======================================================================
 // Template class for representing and factorizing a sparse tensor

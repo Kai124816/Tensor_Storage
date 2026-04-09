@@ -35,7 +35,7 @@ test_*
 *.bin
 
 # ===== Build Directories =====
-/build/
+*build/
 /helpful_info/
 /bin/
 /lib/
@@ -91,4 +91,9 @@ Thumbs.db
 # ===== old test suite =====
 legacy_tests/
 
+# ===== RocProfiler directories =====
+*pass_*
+*.rocprofv3
 
+# ===== Testing Binaries =====
+*bin
