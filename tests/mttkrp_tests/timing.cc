@@ -82,14 +82,16 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
     }
     bool is_csr = blco.get_total_bits_needed() > 74;
     std::vector<float> temp_vec = {0.0f};
-
+    bool valid_version = false;
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_DEFAULT)
     if(version == "default"){
+        valid_version = true;
         Initialize_MTTKRP<T, S>(mode, blco, temp_vec, 1);
     }
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_IN_PROGRESS)
     if(version == "in_progress"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return false;
@@ -99,6 +101,7 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_NAIVE)
     if(version == "naive"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return false;
@@ -108,6 +111,7 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V1)
     if(version == "v1"){
+        valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return false;
@@ -117,6 +121,7 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V2)
     if(version == "v2"){
+        valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return false;
@@ -126,6 +131,7 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_VECTORIZED)
     if(version == "vectorized"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return false;
@@ -133,7 +139,7 @@ std::vector<std::vector<T>>& fmats, int mode, int nnz, int rank, std::vector<int
         MTTKRP_BLCO_VEC(mode, blco, temp_vec);
     }
 #endif
-    else{
+    else if(!valid_version){
         std::cerr << "invalid version or version not compiled in\n";
         return false;
     }

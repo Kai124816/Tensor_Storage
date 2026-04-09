@@ -70,13 +70,16 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
         default_decomp_rank, test_vec);
 
         std::vector<float> temp_vec = {0.0f};
+        bool valid_version = false;
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_DEFAULT)
     if(version == "default"){
+        bool valid_version = true;
         Initialize_MTTKRP<T, S>(mode, blco, temp_vec, 1);
     }
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_IN_PROGRESS)
     if(version == "in_progress"){
+        bool valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -86,6 +89,7 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_NAIVE)
     if(version == "naive"){
+        bool valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -95,6 +99,7 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V1)
     if(version == "v1"){
+        bool valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return;
@@ -104,6 +109,7 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V2)
     if(version == "v2"){
+        bool valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return;
@@ -113,6 +119,7 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_VECTORIZED)
     if(version == "vectorized"){
+        bool valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -122,10 +129,11 @@ void test_mttkrp_synthetic(std::string version, int user_mode, int nnz, int rank
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_ALTO)
     if(version == "alto"){
+        bool valid_version = true;
         alto.MTTKRP_Parallel(mode);
     }
 #endif
-    else{
+    else if(!valid_version){
         std::cerr << "invalid version or version not compiled in\n";
         return;
     }
@@ -225,13 +233,16 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
         }
         
         std::vector<float> temp_vec = {0.0f};
+        bool valid_version = false;
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_DEFAULT)
     if(version == "default"){
+        valid_version = true;
         Initialize_MTTKRP<T, S>(mode, blco, temp_vec, 1);
     }
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_IN_PROGRESS)
     if(version == "in_progress"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -241,6 +252,7 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_NAIVE)
     if(version == "naive"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -250,6 +262,7 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V1)
     if(version == "v1"){
+        valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return;
@@ -259,6 +272,7 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_V2)
     if(version == "v2"){
+        valid_version = true;
         if (rank != 3){
             std::cerr << "invalid rank\n";
             return;
@@ -268,6 +282,7 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_VECTORIZED)
     if(version == "vectorized"){
+        valid_version = true;
         if (rank < 3 || rank > 5){
             std::cerr << "invalid rank\n";
             return;
@@ -277,10 +292,11 @@ int user_mode, int nnz, int rank, std::vector<int> dims)
 #endif
 #if defined(MTTKRP_VERSION_ALL) || defined(MTTKRP_VERSION_ALTO)
     if(version == "alto"){
+        valid_version = true;
         alto.MTTKRP_Parallel(mode);
     }
 #endif
-    else{
+    else if(!valid_version){
         std::cerr << "invalid version or version not compiled in\n";
         return;
     }
